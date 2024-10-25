@@ -1,10 +1,13 @@
 import torch.nn as nn
 from collections import OrderedDict
 from typing import Dict, Any, Optional
-from copy import deepcopy
+# from copy import deepcopy
+from .elasticity import ElasticRange
+
 
 class GraphIR:
     def __init__(self, model: nn.Module):
+        
         self.model = model
         # Store original weights
         self.weights_dict = OrderedDict(model.state_dict())
@@ -28,37 +31,39 @@ class GraphIR:
                 # Initialize empty elastic config
                 self.elastic_config_dict[name] = {}
 
-    def _create_module_metadata(self, name: str, module: nn.Module) -> Optional[Dict[str, Any]]:
-        """Create metadata for a user-defined module."""
-        try:
-            # Get module's __init__ signature
-            import inspect
-            init_signature = inspect.signature(module.__class__.__init__)
+    def _create_module_metadata(self, name: str, module: nn.Module) -> Dict[str, Any]:
+        """Create metadata for ResNet modules with default values."""
+        import inspect
+        
+        # Get module's __init__ signature
+        init_signature = inspect.signature(module.__class__.__init__)
+        
+        # Get current parameter values and defaults
+        current_args = {}
+        for param_name, param in init_signature.parameters.items():
+            if param_name == 'self':
+                continue
             
-            # Get current parameter values where possible
-            current_args = {}
-            for param_name, param in init_signature.parameters.items():
-                if param_name == 'self':
-                    continue
-                # Try to get the current value from module attributes
-                try:
-                    current_args[param_name] = getattr(module, param_name)
-                except AttributeError:
+            # Try to get current value from instance
+            try:
+                value = getattr(module, param_name)
+                current_args[param_name] = value
+            except AttributeError:
+                # If attribute doesn't exist, use default if available
+                if param.default is not param.empty:
+                    current_args[param_name] = param.default
+                else:
                     current_args[param_name] = None
 
-            metadata = {
-                'module_info': {
-                    'type': type(module).__name__,
-                    'path': f"{module.__class__.__module__}.{module.__class__.__name__}",
-                },
-                'init_args': current_args,
-                'elastic': False  # Default to non-elastic
-            }
-            return metadata
-        except Exception as e:
-            print(f"Warning: Could not create metadata for module {name}: {e}")
-            return None
-
+        metadata = {
+            'module_info': {
+                'type': type(module).__name__,
+                'path': f"{module.__class__.__module__}.{module.__class__.__name__}",
+            },
+            'init_args': current_args,
+            'elastic': False
+        }
+        return metadata
 
     def set_elastic_config(self, module_name: str, config: Dict[str, ElasticRange]):
         """Set elastic configuration for a module."""
@@ -68,7 +73,7 @@ class GraphIR:
         self.metadata_dict[module_name]['elastic'] = True
         self.elastic_config_dict[module_name] = config
 
-    def sample_elastic_config(self, module_name: str) -> Dict[str, Any]:
+    def sample_module_elastic_config(self, module_name: str) -> Dict[str, Any]:
         """Sample new configuration for an elastic module."""
         if not self.elastic_config_dict[module_name]:
             raise ValueError(f"No elastic config set for {module_name}")
@@ -77,7 +82,14 @@ class GraphIR:
         for param_name, range_obj in self.elastic_config_dict[module_name].items():
             sampled_config[param_name] = range_obj.sample()
         return sampled_config
-
+    
+    def sample_elastic_configs(self) -> Dict[str, Dict[str, Any]]:
+        """Sample configurations for all elastic modules."""
+        sampled_configs = {}
+        for module_name, metadata in self.metadata_dict.items():
+            if metadata['elastic'] and self.elastic_config_dict[module_name]:
+                sampled_configs[module_name] = self.sample_module_elastic_config(module_name)
+        return sampled_configs
 
     def update_elastic_config(self, module_name: str, new_config: Dict[str, Any]):
         """Update the new configuration for an elastic module."""
