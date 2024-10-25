@@ -1,6 +1,14 @@
 from dataclasses import dataclass
-from typing import Dict, Any, Union, Tuple, List, Optional
+from typing import Dict, Any, Union, Tuple, List, Optional, Callable
 import numpy as np
+from enum import Enum, auto
+
+# Define elasticity types
+class ElasticityType(Enum):
+    STRUCTURAL = auto()  # Parameter-level elasticity (e.g., channel numbers)
+    MODULAR = auto()     # Module-level elasticity (can be removed)
+
+
 @dataclass
 class ElasticRange:
     """Define range and constraints for elastic parameters."""
@@ -32,3 +40,39 @@ class ElasticRange:
         else:
             value = np.random.uniform(self.min_val, self.max_val)
             return round(value / self.step) * self.step
+
+@dataclass
+class ModularConfig:
+    """Configuration for modular elasticity."""
+    removable: bool = False  # Whether module can be removed
+    min_depth: int = 1      # Minimum number of modules to keep
+    max_depth: int = None   # Maximum number of modules (None means no limit)
+    grouping: Optional[str] = None  # Group identifier for related modules
+
+@dataclass
+class DependencyRule:
+    """Define how parameters depend on each other."""
+    source_module: str  # Source module name
+    source_param: str   # Source parameter name
+    target_module: str  # Target module name
+    target_param: str   # Target parameter name
+    transform_fn: Optional[Callable] = None  # Optional transformation function
+    reroute_rules: Optional[Dict[str, str]] = None  # Maps source outputs to target inputs when module is removed
+
+    
+    def apply(self, source_value: Any) -> Any:
+        """Apply transformation to source value."""
+        if self.transform_fn:
+            return self.transform_fn(source_value)
+        return source_value
+
+class ElasticConfig:
+    def __init__(self, 
+                 elasticity_type: ElasticityType,
+                 structural_ranges: Optional[Dict[str, ElasticRange]] = None,
+                 modular_config: Optional[ModularConfig] = None,
+                 dependencies: Optional[List[DependencyRule]] = None):
+        self.elasticity_type = elasticity_type
+        self.structural_ranges = structural_ranges or {}
+        self.modular_config = modular_config
+        self.dependencies = dependencies or []
