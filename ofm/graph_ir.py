@@ -27,43 +27,70 @@ class GraphIR:
             self.dependency_graph[rule.source_module] = []
         #source module is the current module, we store the rule in a hashmap
         self.dependency_graph[rule.source_module].append(rule)
+    
+    def apply_subnet_grads(self, subnet: nn.Module, supernet: nn.Module):
+        """Apply gradients from trained subnet to supernet.
+        
+        Two possible approaches:
+        1. Gradient copying (if we need gradient accumulation):
+        """
+        for super_param, subnet_param in zip(supernet.parameters(), subnet.parameters()):
+            if subnet_param.grad is not None:
+                # Handle different tensor sizes
+                if super_param.shape != subnet_param.shape:
+                    # Create zero grad of supernet shape if not exists
+                    if super_param.grad is None:
+                        super_param.grad = torch.zeros_like(super_param)
+                    # Copy gradients to corresponding positions
+                    slices = tuple(slice(0, dim) for dim in subnet_param.shape)
+                    super_param.grad[slices].copy_(subnet_param.grad)
+                else:
+                    # Direct copy for same shape
+                    if super_param.grad is None:
+                        super_param.grad = subnet_param.grad.clone()
+                    else:
+                        super_param.grad.copy_(subnet_param.grad)
 
     def _copy_weights(self, subnet: nn.Module) -> None:
-        """Copy weights from supernet to subnet by comparing dimensions.
+        """Copy weights from supernet to subnet.
+        Only copies overlapping parts of weights where subnet dimensions are smaller.
         
         Args:
             subnet: The target subnet with potentially smaller dimensions
         """
-        # Get source (supernet) and target (subnet) state dicts
+        # Get source and target state dicts
         source_state_dict = self.weights_dict
         target_state_dict = subnet.state_dict()
         
         # Create new state dict for subnet
         new_state_dict = OrderedDict()
-        
+    
         for key, target_tensor in target_state_dict.items():
             source_tensor = source_state_dict[key]
             
-            if target_tensor.dim() != source_tensor.dim():
-                # If dimensions don't match, copy as is (might be non-weight parameters)
-                new_state_dict[key] = source_tensor
-                continue
-                
-            # Get slicing indices for each dimension
-            slices = []
-            for target_size, source_size in zip(target_tensor.shape, source_tensor.shape):
-                if target_size != source_size:
-                    # Take first n channels where dimensions differ
-                    slices.append(slice(0, target_size))
+            if target_tensor.dim() == source_tensor.dim():
+                # Check if all dimensions in subnet are smaller or equal
+                if all(t_dim <= s_dim 
+                    for t_dim, s_dim in zip(target_tensor.shape, source_tensor.shape)):
+                    # Create slice objects for each dimension
+                    slices = tuple(
+                        slice(0, min(t_dim, s_dim))
+                        for t_dim, s_dim in zip(target_tensor.shape, source_tensor.shape)
+                    )
+                    new_state_dict[key] = source_tensor[slices]
                 else:
-                    # Keep full dimension where sizes match
-                    slices.append(slice(None))
-            
-            # Copy sliced weights
-            new_state_dict[key] = source_tensor[slices]
-        
+                    print("dim not match")
+                    continue
+                    # new_state_dict[key] = target_tensor  # Keep original if dimensions don't match
+            else:
+                # If dimensions don't match, copy the tensor as is
+                # new_state_dict[key] = source_tensor
+                print("dim not match")
+                continue
         # Load weights into subnet
         subnet.load_state_dict(new_state_dict)
+    
+    
     def _get_module_groups(self) -> Dict[str, List[str]]:
         """Get groups of related modules."""
         groups = {}
@@ -383,7 +410,7 @@ class GraphIR:
         """Sample which blocks to keep and remove.
         
         Returns:
-            Tuple[Set[str], Set[str]]: (kept_blocks, removed_blocks)
+            Tuple[Set[str], Set[str]]: (kept_blocks, removed_blocks)PP
         """
         kept_blocks = set()
         removed_blocks = set()
@@ -412,7 +439,7 @@ class GraphIR:
         """Get metadata for a specific module."""
         return self.metadata_dict.get(name)
 
-    def create_subnet(self, sampled_configs: Dict[str, Dict[str, Any]]) -> nn.Module:
+    def create_subnet__(self, sampled_configs: Dict[str, Dict[str, Any]]) -> nn.Module:
         """Create a subnet based on the sampled elastic configurations.
         
         Args:
@@ -444,8 +471,39 @@ class GraphIR:
             # Replace the module in subnet
             setattr(curr_module, names[-1], new_module)
         
+        self._copy_weights(subnet)
+        
         return subnet
+    def create_subnet(self, sampled_configs: Dict[str, Dict[str, Any]]) -> nn.Module:
+        """Create a subnet based on the sampled elastic configurations."""
+        subnet = deepcopy(self.model)
+       
+        def fix_module_children(new_mod, orig_mod):
+            for name, child in new_mod.named_children():
+                orig_child = getattr(orig_mod, name)
+                if type(child) != type(orig_child):
+                    setattr(new_mod, name, deepcopy(orig_child))
+        for module_name, config in sampled_configs.items():
+            names = module_name.split('.')
+            curr_module = subnet
+            for name in names[:-1]:
+                curr_module = getattr(curr_module, name)
+            
+            original_module = getattr(curr_module, names[-1])
+            module_class = type(original_module)
+            
+            # Create new module with new config
+            init_args = self.metadata_dict[module_name]['init_args'].copy()
+            init_args.update(config)
+            new_module = module_class(**init_args)
+            
 
+            # Fix children modules right after creation            
+            fix_module_children(new_module, original_module)
+            setattr(curr_module, names[-1], new_module)
+        
+        self._copy_weights(subnet)
+        return subnet
     def print_metadata_dict(self, indent=2):
         """Pretty print the metadata dictionary."""
         def _format_dict(d, level=0):
