@@ -120,10 +120,12 @@ class DependencyRule:
         
 #         return "\n".join(parts)
 
+@dataclass
 class ElasticConfig:
     def __init__(self, 
                  structural_ranges: Dict[str, ElasticRange],
-                 dependencies: Optional[List[DependencyRule]] = None):
+                 dependencies: Optional[List[DependencyRule]] = None,
+                 init_kwargs: Optional[Dict[str, Any]] = None):  # New field for fixed arguments
         self.structural_ranges = structural_ranges
         self.dependencies = dependencies or []
         self.init_kwargs = init_kwargs or {}  # Fixed arguments for module initialization

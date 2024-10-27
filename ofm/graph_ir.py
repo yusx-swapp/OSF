@@ -163,7 +163,9 @@ class GraphIR:
     def set_elastic_config(self, module_name: str, config: ElasticConfig):
         """Set elastic configuration with dependencies."""
         if module_name not in self.metadata_dict:
-            raise KeyError(f"Module {module_name} not found")
+            self.metadata_dict[module_name] = {}
+            self.elastic_config_dict[module_name] = {}
+            # raise KeyError(f"Module {module_name} not found")
         
         self.metadata_dict[module_name]['elastic'] = True
         self.elastic_config_dict[module_name] = config
