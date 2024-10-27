@@ -2,8 +2,9 @@ import torch.nn as nn
 from collections import OrderedDict
 from typing import Dict, Any, Optional, List, Set, Tuple
 # from copy import deepcopy
-from .elasticity import ElasticRange, DependencyRule, ElasticConfig, ElasticityType
+from .elasticity import ElasticRange, DependencyRule, ElasticConfig, ElasticityType, BlockElasticConfig
 import numpy as np
+from copy import deepcopy
 
 class GraphIR:
     def __init__(self, model: nn.Module):
