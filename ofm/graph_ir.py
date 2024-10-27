@@ -116,9 +116,7 @@ class GraphIR:
     def _build_ir(self):
         """Build metadata dictionary for user-defined modules."""
         for name, module in self.model.named_modules():
-            # Skip built-in PyTorch modules
-            if type(module).__module__.startswith('torch.nn'):
-                continue
+
             
             metadata = self._create_module_metadata(name, module)
             if metadata:  # Only add if we got valid metadata
@@ -163,9 +161,9 @@ class GraphIR:
     def set_elastic_config(self, module_name: str, config: ElasticConfig):
         """Set elastic configuration with dependencies."""
         if module_name not in self.metadata_dict:
-            self.metadata_dict[module_name] = {}
-            self.elastic_config_dict[module_name] = {}
-            # raise KeyError(f"Module {module_name} not found")
+            # self.metadata_dict[module_name] = {}
+            # self.elastic_config_dict[module_name] = {}
+            raise KeyError(f"Module {module_name} not found")
         
         self.metadata_dict[module_name]['elastic'] = True
         self.elastic_config_dict[module_name] = config
