@@ -92,11 +92,16 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, criterion, de
     correct = 0
     total = 0
     
-    if local_rank == 0:
-        train_loader = tqdm(train_loader, desc=f"Epoch {epoch}")
-        start_time = time.time()
+    # Get total dataset size for proper logging
+    dataset_size = len(train_loader.dataset) if hasattr(train_loader, 'dataset') else len(train_loader) * args.per_device_train_batch_size * dist.get_world_size()
     
-    for batch_idx, batch in enumerate(train_loader):
+    if local_rank == 0:
+        progress_bar = tqdm(train_loader, desc=f"Epoch {epoch}")
+        start_time = time.time()
+    else:
+        progress_bar = train_loader
+    
+    for batch_idx, batch in enumerate(progress_bar):
         images = batch["pixel_values"].to(device, non_blocking=True)
         labels = batch["labels"].to(device, non_blocking=True)
         
@@ -124,16 +129,24 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, criterion, de
         
         if batch_idx % args.log_interval == 0 and local_rank == 0:
             current_lr = scheduler.get_last_lr()[0]
+            processed_samples = batch_idx * args.per_device_train_batch_size * dist.get_world_size()
             speed = args.log_interval * args.per_device_train_batch_size * dist.get_world_size() / (time.time() - start_time)
-            print(f'Epoch: {epoch} [{batch_idx * len(images)}/{len(train_loader.dataset)}'
-                  f' ({100. * batch_idx / len(train_loader):.0f}%)]\t'
+            print(f'Epoch: {epoch} [{processed_samples}/{dataset_size} '
+                  f'({100. * processed_samples / dataset_size:.0f}%)]\t'
                   f'Loss: {loss.item():.4f}\t'
                   f'Acc: {100. * correct / total:.2f}%\t'
                   f'LR: {current_lr:.6f}\t'
                   f'Speed: {speed:.1f} samples/sec')
             start_time = time.time()
     
-    return total_loss / len(train_loader), 100. * correct / total
+    metrics = torch.tensor([total_loss, correct, total], device=device)
+    dist.all_reduce(metrics, op=dist.ReduceOp.SUM)
+    total_loss, correct, total = metrics.tolist()
+    
+    avg_loss = total_loss / (len(train_loader) * dist.get_world_size())
+    accuracy = 100. * correct / total
+    
+    return avg_loss, accuracy
 
 @torch.no_grad()
 def validate(model, val_loader, criterion, device, local_rank, args):
@@ -293,17 +306,29 @@ def main(args):
     )
 
     # Apply elastic configurations if specified
-    if args.elastic_config:
-        ir = GraphIR(model)
-        configs = copy.deepcopy(resnet_elastic.ELASTIC_CONFIGS)
-        for module_name, config in configs.items():
-            ir.set_elastic_config(module_name, config)
+    
+    ir = GraphIR(model)
+    configs = copy.deepcopy(resnet_elastic.ELASTIC_CONFIGS)
+    for module_name, config in configs.items():
+        ir.set_elastic_config(module_name, config)
+    # Only rank 0 samples configuration
+    if dist.get_rank() == 0:
+        # sampled_configs = ir.sample_elastic_configs()
         sampled_configs = ir.sample_min_elastic_config()
-        model = ir.create_subnet(sampled_configs)
+    else:
+        sampled_configs = None
+
+    # Broadcast sampled configs from rank 0 to all ranks
+    if dist.get_world_size() > 1:
+        sampled_configs = [sampled_configs if dist.get_rank() == 0 else None]
+        dist.broadcast_object_list(sampled_configs, src=0)
+        sampled_configs = sampled_configs[0]
+
+    # Create identical subnet on all ranks
+    model = ir.create_subnet(sampled_configs)
 
     model = model.to(device)
     model = DDP(model, device_ids=[local_rank], output_device=local_rank)
-
     # Initialize optimizer, scheduler, and scaler
     optimizer = get_optimizer(model, args)
     num_training_steps = len(train_loader) * args.epochs

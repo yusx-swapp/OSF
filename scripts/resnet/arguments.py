@@ -143,7 +143,7 @@ def arguments():
     parser.add_argument(
         "--cache_dir",
         type=str,
-        default="~/.cache/huggingface/datasets",
+        default="/scratch/bcha/syu2/",
         help="Cache directory for datasets and models"
     )
     
