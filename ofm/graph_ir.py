@@ -27,16 +27,42 @@ class GraphIR:
         #source module is the current module, we store the rule in a hashmap
         self.dependency_graph[rule.source_module].append(rule)
 
-    # def _get_module_groups(self) -> Dict[str, List[str]]:
-    #     """Get groups of related modules."""
-    #     groups = {}
-    #     for module_name, config in self.elastic_config_dict.items():
-    #         if config.modular_config and config.modular_config.grouping:
-    #             group = config.modular_config.grouping
-    #             if group not in groups:
-    #                 groups[group] = []
-    #             groups[group].append(module_name)
-    #     return groups
+    def _copy_weights(self, subnet: nn.Module) -> None:
+        """Copy weights from supernet to subnet by comparing dimensions.
+        
+        Args:
+            subnet: The target subnet with potentially smaller dimensions
+        """
+        # Get source (supernet) and target (subnet) state dicts
+        source_state_dict = self.weights_dict
+        target_state_dict = subnet.state_dict()
+        
+        # Create new state dict for subnet
+        new_state_dict = OrderedDict()
+        
+        for key, target_tensor in target_state_dict.items():
+            source_tensor = source_state_dict[key]
+            
+            if target_tensor.dim() != source_tensor.dim():
+                # If dimensions don't match, copy as is (might be non-weight parameters)
+                new_state_dict[key] = source_tensor
+                continue
+                
+            # Get slicing indices for each dimension
+            slices = []
+            for target_size, source_size in zip(target_tensor.shape, source_tensor.shape):
+                if target_size != source_size:
+                    # Take first n channels where dimensions differ
+                    slices.append(slice(0, target_size))
+                else:
+                    # Keep full dimension where sizes match
+                    slices.append(slice(None))
+            
+            # Copy sliced weights
+            new_state_dict[key] = source_tensor[slices]
+        
+        # Load weights into subnet
+        subnet.load_state_dict(new_state_dict)
     def _get_module_groups(self) -> Dict[str, List[str]]:
         """Get groups of related modules."""
         groups = {}
@@ -145,8 +171,8 @@ class GraphIR:
         if config.dependencies:
             for rule in config.dependencies:
                 self.add_dependency_rule(rule)
-                
-    def _propagate_dependencies(self, 
+ 
+    def _propagate_dependencies__(self, 
                               sampled_configs: Dict[str, Dict[str, Any]],
                               module_name: str):
         """Propagate configuration changes through dependencies."""
@@ -162,7 +188,10 @@ class GraphIR:
                 continue
             
             # Apply transformation and update target
-            target_value = rule.apply(source_value)
+            if rule.transform_fn:
+                target_value = rule.transform_fn(source_value)
+            else:
+                target_value = source_value  # Direct copy if no transform_fn
             
             # Create or update target module config
             if rule.target_module not in sampled_configs:
@@ -173,75 +202,116 @@ class GraphIR:
             self._propagate_dependencies(sampled_configs, rule.target_module)
 
                 
-    def sample_module_elastic_config(self, module_name: str) -> Dict[str, Any]:
-        
-        #TODO: add dependency
-        return
-        """Sample new configuration for an elastic module."""
-        if not self.elastic_config_dict[module_name]:
-            raise ValueError(f"No elastic config set for {module_name}")
-        
-        sampled_config = {}
-        for param_name, range_obj in self.elastic_config_dict[module_name].items():
-            sampled_config[param_name] = range_obj.sample()
-        return sampled_config
-    
+    def _propagate_dependencies(self, 
+                              sampled_configs: Dict[str, Dict[str, Any]],
+                              module_name: str):
+        """Propagate configuration changes through dependencies."""
+        if module_name not in self.dependency_graph:
+            return
 
-    # def sample_elastic_configs(self) -> Dict[str, Dict[str, Any]]:
-    #     """Sample configurations respecting dependencies."""
-    #     sampled_configs = {}
+        for rule in self.dependency_graph[module_name]:
+            source_value = sampled_configs[module_name].get(rule.source_param)
+            if source_value is None:
+                continue
+            
+            # Apply transformation and update target
+            target_value = rule.apply(source_value)
+            
+            # Create or update target module config
+            if rule.target_module not in sampled_configs:
+                sampled_configs[rule.target_module] = {}
+            sampled_configs[rule.target_module][rule.target_param] = target_value
+
+    def sample_elastic_configs(self) -> Dict[str, Dict[str, Any]]:
+        """Sample configurations respecting dependencies."""
+        sampled_configs = {}
         
-    #     # First, sample independent modules
-    #     for module_name, metadata in self.metadata_dict.items():
-    #         if not metadata['elastic'] or not self.elastic_config_dict[module_name]:
-    #             continue
+        # First sample all configurations
+        for module_name, config in self.elastic_config_dict.items():
+            if not isinstance(config, ElasticConfig):
+                continue
                 
-    #         config = self.elastic_config_dict[module_name]
-    #         sampled_config = {}
+            sampled_config = {}
+            for param_name, range_obj in config.structural_ranges.items():
+                sampled_config[param_name] = range_obj.sample()
+            sampled_configs[module_name] = sampled_config
+                
+        # Then apply all dependencies to correct the configurations
+        for module_name, config in self.elastic_config_dict.items():
+            if not isinstance(config, ElasticConfig):
+                continue
             
-    #         for param_name, range_obj in config.ranges.items():
-    #             sampled_config[param_name] = range_obj.sample()
-            
-    #         sampled_configs[module_name] = sampled_config
-            
-    #         # Propagate dependencies
-    #         self._propagate_dependencies(sampled_configs, module_name)
+            self._propagate_dependencies(sampled_configs, module_name)
         
-    #     return sampled_configs
+        return sampled_configs
 
-    def sample_elastic_configs(self) -> Tuple[Dict[str, Dict[str, Any]], Set[str]]:
+    def sample_elastic_configs__(self) -> Tuple[Dict[str, Dict[str, Any]], Set[str]]:
         """Sample configurations and determine which modules to remove."""
         sampled_configs = {}
         removed_modules = set()
         
-        # First, decide which modules to remove
-        for module_name, config in self.elastic_config_dict.items():
-            # Check if config is a valid ElasticConfig object
-            if (isinstance(config, ElasticConfig) and 
-                config.modular_config and 
-                config.modular_config.removable and 
-                np.random.random() > 0.5):  # 50% chance to remove
-                removed_modules.add(module_name)
+        # First build a dependency order
+        order = []
+        visited = set()
         
-        # Validate modular constraints
-        if not self._validate_modular_constraints(removed_modules):
-            return self.sample_elastic_configs()  # Changed from sample_all_elastic_configs
+        def visit(module_name: str):
+            if module_name in visited:
+                return
+            visited.add(module_name)
+            
+            # First visit any modules this module depends on
+            config = self.elastic_config_dict.get(module_name)
+            if isinstance(config, ElasticConfig) and config.dependencies:
+                for dep in config.dependencies:
+                    # If this module's parameter depends on another module,
+                    # process that module first
+                    if dep.source_module == module_name:
+                        visit(dep.target_module)
+            
+            order.append(module_name)
         
-        # Sample structural configs for remaining modules
-        for module_name, config in self.elastic_config_dict.items():
+        # Build processing order
+        for module_name in self.elastic_config_dict.keys():
+            visit(module_name)
+        
+        print(f"Processing order: {order}")  # Debug print
+        
+        # Now sample in order
+        for module_name in order:
             if module_name in removed_modules:
                 continue
                 
-            if isinstance(config, ElasticConfig) and config.elasticity_type == ElasticityType.STRUCTURAL:
-                sampled_config = {}
-                for param_name, range_obj in config.structural_ranges.items():
+            config = self.elastic_config_dict.get(module_name)
+            if not isinstance(config, ElasticConfig):
+                continue
+                
+            # Check if this module's parameters are determined by dependencies
+            determined_params = {}
+            if module_name in sampled_configs:
+                determined_params = sampled_configs[module_name]
+            
+            # Sample only parameters that aren't determined by dependencies
+            sampled_config = {}
+            for param_name, range_obj in config.structural_ranges.items():
+                if param_name not in determined_params:
                     sampled_config[param_name] = range_obj.sample()
-                sampled_configs[module_name] = sampled_config
+                else:
+                    sampled_config[param_name] = determined_params[param_name]
+            
+            sampled_configs[module_name] = sampled_config
+            
+            # Propagate this configuration
+            if config.dependencies:
+                for dep in config.dependencies:
+                    if dep.source_module == module_name:  # only propagate if this is the source
+                        source_value = sampled_config[dep.source_param]
+                        target_value = dep.transform_fn(source_value) if dep.transform_fn else source_value
+                        
+                        if dep.target_module not in sampled_configs:
+                            sampled_configs[dep.target_module] = {}
+                        sampled_configs[dep.target_module][dep.target_param] = target_value
         
-        # Handle rerouting for removed modules
-        for module_name in removed_modules:
-            self._reroute_connections(module_name, removed_modules, sampled_configs)
-        
+        print("Final configs:", sampled_configs)  # Debug print
         return sampled_configs, removed_modules
     def update_elastic_config(self, module_name: str, new_config: Dict[str, Any]):
         #TODO add should update dependency as well
@@ -254,10 +324,92 @@ class GraphIR:
             raise ValueError(f"Module {module_name} is not marked as elastic")
         
         self.elastic_config_dict[module_name] = new_config
+    def sample_max_elastic_config(self) -> Dict[str, Dict[str, Any]]:
+        """Sample configuration with maximum values for elastic parameters."""
+        sampled_configs = {}
+        
+        # Sample maximum values for each module
+        for module_name, config in self.elastic_config_dict.items():
+            if not isinstance(config, ElasticConfig):
+                continue
+                
+            sampled_config = {}
+            for param_name, range_obj in config.structural_ranges.items():
+                sampled_config[param_name] = range_obj.max_val
+            sampled_configs[module_name] = sampled_config
+        
+        # Apply dependencies
+        for module_name, config in self.elastic_config_dict.items():
+            if not isinstance(config, ElasticConfig):
+                continue
+            self._propagate_dependencies(sampled_configs, module_name)
+        
+        return sampled_configs
+
+    def sample_min_elastic_config(self) -> Dict[str, Dict[str, Any]]:
+        """Sample configuration with minimum values for elastic parameters."""
+        sampled_configs = {}
+        
+        # Sample minimum values for each module
+        for module_name, config in self.elastic_config_dict.items():
+            if not isinstance(config, ElasticConfig):
+                continue
+                
+            sampled_config = {}
+            for param_name, range_obj in config.structural_ranges.items():
+                sampled_config[param_name] = range_obj.min_val
+            sampled_configs[module_name] = sampled_config
+        
+        # Apply dependencies
+        for module_name, config in self.elastic_config_dict.items():
+            if not isinstance(config, ElasticConfig):
+                continue
+            self._propagate_dependencies(sampled_configs, module_name)
+        
+        return sampled_configs
 
     def get_module_metadata(self, name: str) -> Dict[str, Any]:
         """Get metadata for a specific module."""
         return self.metadata_dict.get(name)
+
+    def create_subnet(self, sampled_configs: Dict[str, Dict[str, Any]]) -> nn.Module:
+        """Create a subnet based on the sampled elastic configurations.
+        
+        Args:
+            sampled_configs: Dictionary mapping module names to their sampled configurations
+                            Example: {'resnet.encoder.stages.0.layers.0': {'in_channels': 64, 'out_channels': 128}}
+        
+        Returns:
+            nn.Module: A new model instance with the sampled configurations
+        """
+        # Create a deep copy of the original model
+        subnet = deepcopy(self.model)
+        
+        # For each module in the sampled configs
+        for module_name, config in sampled_configs.items():
+            # Get the module from subnet using the module name
+            names = module_name.split('.')
+            curr_module = subnet
+            for name in names[:-1]:
+                curr_module = getattr(curr_module, name)
+            
+            # Get original module to access its class and default arguments
+            original_module = getattr(curr_module, names[-1])
+            module_class = type(original_module)
+            
+            # Get initialization arguments from metadata
+            init_args = self.metadata_dict[module_name]['init_args'].copy()
+            
+            # Update init_args with sampled config
+            init_args.update(config)
+            
+            # Create new module instance with updated config
+            new_module = module_class(**init_args)
+            
+            # Replace the module in subnet
+            setattr(curr_module, names[-1], new_module)
+        
+        return subnet
 
     def print_metadata_dict(self, indent=2):
         """Pretty print the metadata dictionary."""
@@ -317,3 +469,5 @@ class GraphIR:
                 mermaid.append(f'    {source_id} -->|"{label}"| {target_id}')
         print("\n".join(mermaid))
         return "\n".join(mermaid)
+    
+    
