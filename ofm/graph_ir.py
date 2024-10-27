@@ -171,7 +171,10 @@ class GraphIR:
         if config.dependencies:
             for rule in config.dependencies:
                 self.add_dependency_rule(rule)
- 
+    def set_block_elastic_config(self, group_name: str, config: BlockElasticConfig):
+        """Set block elastic configuration for a group of blocks."""
+        self.block_elastic_config_dict[group_name] = config
+     
     def _propagate_dependencies__(self, 
                               sampled_configs: Dict[str, Dict[str, Any]],
                               module_name: str):
@@ -367,7 +370,36 @@ class GraphIR:
             self._propagate_dependencies(sampled_configs, module_name)
         
         return sampled_configs
-
+    
+    def sample_block_config(self) -> Tuple[Set[str], Set[str]]:
+        """Sample which blocks to keep and remove.
+        
+        Returns:
+            Tuple[Set[str], Set[str]]: (kept_blocks, removed_blocks)
+        """
+        kept_blocks = set()
+        removed_blocks = set()
+        
+        # Process each group
+        for group_name, config in self.block_elastic_config_dict.items():
+            available_blocks = config.blocks.copy()
+            
+            # Randomly decide how many blocks to keep (between min and max depth)
+            num_blocks = len(available_blocks)
+            num_keep = np.random.randint(config.min_depth, min(config.max_depth, num_blocks) + 1)
+            
+            # Randomly select blocks to keep
+            blocks_to_keep = set(np.random.choice(
+                available_blocks, 
+                size=num_keep, 
+                replace=False
+            ))
+            
+            # Update kept and removed sets
+            kept_blocks.update(blocks_to_keep)
+            removed_blocks.update(set(available_blocks) - blocks_to_keep)
+        
+        return kept_blocks, removed_blocks
     def get_module_metadata(self, name: str) -> Dict[str, Any]:
         """Get metadata for a specific module."""
         return self.metadata_dict.get(name)
