@@ -437,14 +437,9 @@ class GraphIR:
             original_module = getattr(curr_module, names[-1])
             module_class = type(original_module)
             
-            # Get initialization arguments from metadata
-            init_args = self.metadata_dict[module_name]['init_args'].copy()
-            
-            # Update init_args with sampled config
-            init_args.update(config)
-            print("Init args:", init_args)  # Debug print
-            # Create new module instance with updated config
-            new_module = module_class(**init_args)
+        
+        
+            new_module = module_class(**config)
             
             # Replace the module in subnet
             setattr(curr_module, names[-1], new_module)
