@@ -126,6 +126,7 @@ class ElasticConfig:
                  dependencies: Optional[List[DependencyRule]] = None):
         self.structural_ranges = structural_ranges
         self.dependencies = dependencies or []
+        self.init_kwargs = init_kwargs or {}  # Fixed arguments for module initialization
 
 @dataclass
 class BlockElasticConfig:

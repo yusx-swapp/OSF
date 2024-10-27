@@ -238,6 +238,9 @@ class GraphIR:
             sampled_config = {}
             for param_name, range_obj in config.structural_ranges.items():
                 sampled_config[param_name] = range_obj.sample()
+            
+            # Add fixed initialization arguments
+            sampled_config.update(config.init_kwargs)
             sampled_configs[module_name] = sampled_config
                 
         # Then apply all dependencies to correct the configurations
@@ -340,6 +343,8 @@ class GraphIR:
             sampled_config = {}
             for param_name, range_obj in config.structural_ranges.items():
                 sampled_config[param_name] = range_obj.max_val
+            # Add fixed initialization arguments
+            sampled_config.update(config.init_kwargs)
             sampled_configs[module_name] = sampled_config
         
         # Apply dependencies
@@ -362,6 +367,8 @@ class GraphIR:
             sampled_config = {}
             for param_name, range_obj in config.structural_ranges.items():
                 sampled_config[param_name] = range_obj.min_val
+            # Add fixed initialization arguments
+            sampled_config.update(config.init_kwargs)
             sampled_configs[module_name] = sampled_config
         
         # Apply dependencies
@@ -435,7 +442,7 @@ class GraphIR:
             
             # Update init_args with sampled config
             init_args.update(config)
-            
+            print("Init args:", init_args)  # Debug print
             # Create new module instance with updated config
             new_module = module_class(**init_args)
             
