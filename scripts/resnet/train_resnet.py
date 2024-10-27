@@ -1,0 +1,355 @@
+import os
+import torch
+import numpy as np
+from datasets import load_dataset
+import functools
+import evaluate
+from transformers import AutoImageProcessor, AutoModelForImageClassification
+from arguments import arguments
+import torch.multiprocessing as mp
+from ofm import OFM, GraphIR
+import resnet_elastic
+import copy
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
+import logging
+from tqdm import tqdm
+from torch.cuda.amp import autocast, GradScaler
+import math
+import time
+from pathlib import Path
+
+def get_optimizer(model, args):
+    """Initialize optimizer"""
+    if args.optimizer == "adamw":
+        optimizer = torch.optim.AdamW(
+            model.parameters(),
+            lr=args.lr,
+            weight_decay=args.weight_decay
+        )
+    else:
+        optimizer = torch.optim.SGD(
+            model.parameters(),
+            lr=args.lr,
+            momentum=0.9,
+            weight_decay=args.weight_decay
+        )
+    return optimizer
+
+def get_scheduler(optimizer, args, num_training_steps):
+    """Initialize learning rate scheduler with warmup"""
+    num_warmup_steps = args.warmup_epochs * num_training_steps // args.epochs
+    
+    if args.lr_scheduler == "cosine":
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+            optimizer,
+            max_lr=args.lr,
+            total_steps=num_training_steps,
+            pct_start=args.warmup_epochs/args.epochs,
+            anneal_strategy='cos',
+            final_div_factor=args.lr/args.min_lr,
+            div_factor=25
+        )
+    elif args.lr_scheduler == "linear":
+        def lr_lambda(current_step):
+            if current_step < num_warmup_steps:
+                return float(current_step) / float(max(1, num_warmup_steps))
+            return max(
+                0.0,
+                float(num_training_steps - current_step) / float(max(1, num_training_steps - num_warmup_steps))
+            )
+        scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda)
+    else:  # step
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.1)
+    
+    return scheduler
+
+def setup():
+    """Initialize the distributed training environment"""
+    dist.init_process_group(backend="nccl")
+    local_rank = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(local_rank)
+    world_size = dist.get_world_size()
+    global_rank = dist.get_rank()
+    
+    # Set cuda device first
+    device = torch.device(f"cuda:{local_rank}")
+    
+    # Enable cuDNN benchmarking for better performance
+    torch.backends.cudnn.benchmark = True
+    
+    if global_rank == 0:
+        print(f"Training with {world_size} GPUs")
+    
+    return local_rank, world_size, global_rank, device
+
+def train_epoch(model, train_loader, optimizer, scheduler, scaler, criterion, device, epoch, args, local_rank):
+    """Training loop for one epoch with mixed precision"""
+    model.train()
+    total_loss = 0
+    correct = 0
+    total = 0
+    
+    if local_rank == 0:
+        train_loader = tqdm(train_loader, desc=f"Epoch {epoch}")
+        start_time = time.time()
+    
+    for batch_idx, batch in enumerate(train_loader):
+        images = batch["pixel_values"].to(device, non_blocking=True)
+        labels = batch["labels"].to(device, non_blocking=True)
+        
+        # Mixed precision training
+        with autocast(enabled=args.fp16):
+            outputs = model(images)
+            loss = criterion(outputs.logits, labels)
+        
+        # Scale loss and backward pass
+        scaler.scale(loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+        optimizer.zero_grad()
+        
+        # Update learning rate
+        scheduler.step()
+        
+        # Compute accuracy
+        with torch.no_grad():
+            _, predicted = outputs.logits.max(1)
+            total += labels.size(0)
+            correct += predicted.eq(labels).sum().item()
+        
+        total_loss += loss.item()
+        
+        if batch_idx % args.log_interval == 0 and local_rank == 0:
+            current_lr = scheduler.get_last_lr()[0]
+            speed = args.log_interval * args.per_device_train_batch_size * dist.get_world_size() / (time.time() - start_time)
+            print(f'Epoch: {epoch} [{batch_idx * len(images)}/{len(train_loader.dataset)}'
+                  f' ({100. * batch_idx / len(train_loader):.0f}%)]\t'
+                  f'Loss: {loss.item():.4f}\t'
+                  f'Acc: {100. * correct / total:.2f}%\t'
+                  f'LR: {current_lr:.6f}\t'
+                  f'Speed: {speed:.1f} samples/sec')
+            start_time = time.time()
+    
+    return total_loss / len(train_loader), 100. * correct / total
+
+@torch.no_grad()
+def validate(model, val_loader, criterion, device, local_rank, args):
+    """Validation loop with mixed precision"""
+    model.eval()
+    val_loss = 0
+    correct = 0
+    total = 0
+    
+    if local_rank == 0:
+        val_loader = tqdm(val_loader, desc="Validation")
+    
+    for batch in val_loader:
+        images = batch["pixel_values"].to(device, non_blocking=True)
+        labels = batch["labels"].to(device, non_blocking=True)
+        
+        with autocast(enabled=args.fp16):
+            outputs = model(images)
+            loss = criterion(outputs.logits, labels)
+        
+        val_loss += loss.item()
+        _, predicted = outputs.logits.max(1)
+        total += labels.size(0)
+        correct += predicted.eq(labels).sum().item()
+    
+    # Gather metrics from all processes
+    metrics = torch.tensor([val_loss, correct, total], device=device)
+    dist.all_reduce(metrics, op=dist.ReduceOp.SUM)
+    val_loss, correct, total = metrics.tolist()
+    
+    val_loss = val_loss / len(val_loader) / dist.get_world_size()
+    accuracy = 100. * correct / total
+    
+    if local_rank == 0:
+        print(f'\nValidation set: Average loss: {val_loss:.4f}, '
+              f'Accuracy: {correct}/{total} ({accuracy:.2f}%)\n')
+    
+    return val_loss, accuracy
+
+def save_checkpoint(model, optimizer, scheduler, scaler, epoch, best_accuracy, args, is_best=False):
+    """Save training checkpoint"""
+    checkpoint = {
+        'epoch': epoch,
+        'model_state_dict': model.module.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),
+        'scaler_state_dict': scaler.state_dict(),
+        'best_accuracy': best_accuracy,
+    }
+    
+    checkpoint_dir = Path(args.output_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Save latest checkpoint
+    if epoch % args.save_interval == 0:
+        torch.save(checkpoint, checkpoint_dir / f'checkpoint_epoch_{epoch}.pth')
+    
+    # Save best checkpoint
+    if is_best:
+        torch.save(checkpoint, checkpoint_dir / 'best_model.pth')
+        
+    # Save elastic config if used
+    if args.elastic_config and is_best:
+        ir.save_elastic_config(checkpoint_dir / "elastic_space.json")
+
+def main(args):
+    local_rank, world_size, global_rank, device = setup()
+    
+    # Set random seed
+    torch.manual_seed(args.seed + global_rank)
+    np.random.seed(args.seed + global_rank)
+    
+    if global_rank == 0:
+        print("Loading dataset...")
+    
+    # Load dataset and processor
+    model_name = "microsoft/resnet-50"
+    processor_name = "microsoft/resnet-50"
+    
+    if args.huggingface_token:
+        from huggingface_hub import login
+        login(args.huggingface_token, add_to_git_credential=True)
+
+    dataset = load_dataset(
+        args.dataset,
+        cache_dir=args.cache_dir,
+        trust_remote_code=True,
+        split=['train', 'validation']
+    )
+    
+    dataset = {
+        'train': dataset[0],
+        'validation': dataset[1]
+    }
+
+    if args.dataset == "imagenet-1k":
+        dataset['train'] = dataset['train'].rename_column("image", "img")
+        dataset['validation'] = dataset['validation'].rename_column("image", "img")
+
+    labels = dataset['train'].features["label"].names
+    processor = AutoImageProcessor.from_pretrained(processor_name, cache_dir=args.cache_dir)
+    
+    # Transform function
+    def transform(example_batch, processor):
+        inputs = processor([x.convert("RGB") for x in example_batch["img"]], return_tensors="pt")
+        inputs["labels"] = example_batch["label"]
+        return inputs
+    
+    prepared_ds = {
+        split: dataset[split].with_transform(functools.partial(transform, processor=processor))
+        for split in ['train', 'validation']
+    }
+
+    # Create data loaders with DistributedSampler
+    train_sampler = DistributedSampler(
+        prepared_ds['train'],
+        num_replicas=world_size,
+        rank=global_rank,
+        shuffle=True
+    )
+    
+    val_sampler = DistributedSampler(
+        prepared_ds['validation'],
+        num_replicas=world_size,
+        rank=global_rank,
+        shuffle=False
+    )
+    
+    train_loader = DataLoader(
+        prepared_ds['train'],
+        batch_size=args.per_device_train_batch_size,
+        sampler=train_sampler,
+        num_workers=args.num_workers,
+        pin_memory=True,
+        persistent_workers=True,
+        drop_last=True
+    )
+    
+    val_loader = DataLoader(
+        prepared_ds['validation'],
+        batch_size=args.per_device_eval_batch_size,
+        sampler=val_sampler,
+        num_workers=args.num_workers,
+        pin_memory=True,
+        persistent_workers=True,
+        drop_last=False
+    )
+
+    # Initialize model
+    model = AutoModelForImageClassification.from_pretrained(
+        model_name,
+        num_labels=len(labels),
+        id2label={str(i): c for i, c in enumerate(labels)},
+        label2id={c: str(i) for i, c in enumerate(labels)},
+        cache_dir=args.cache_dir,
+        ignore_mismatched_sizes=True
+    )
+
+    # Apply elastic configurations if specified
+    if args.elastic_config:
+        ir = GraphIR(model)
+        configs = copy.deepcopy(resnet_elastic.ELASTIC_CONFIGS)
+        for module_name, config in configs.items():
+            ir.set_elastic_config(module_name, config)
+        sampled_configs = ir.sample_min_elastic_config()
+        model = ir.create_subnet(sampled_configs)
+
+    model = model.to(device)
+    model = DDP(model, device_ids=[local_rank], output_device=local_rank)
+
+    # Initialize optimizer, scheduler, and scaler
+    optimizer = get_optimizer(model, args)
+    num_training_steps = len(train_loader) * args.epochs
+    scheduler = get_scheduler(optimizer, args, num_training_steps)
+    scaler = GradScaler(enabled=args.fp16)
+    criterion = torch.nn.CrossEntropyLoss()
+    
+    # Resume from checkpoint if specified
+    start_epoch = 0
+    best_accuracy = 0
+    if args.resume_ckpt and os.path.isfile(args.resume_ckpt):
+        if global_rank == 0:
+            print(f"Loading checkpoint from {args.resume_ckpt}")
+        checkpoint = torch.load(args.resume_ckpt, map_location=device)
+        model.module.load_state_dict(checkpoint['model_state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        scaler.load_state_dict(checkpoint['scaler_state_dict'])
+        start_epoch = checkpoint['epoch']
+        best_accuracy = checkpoint['best_accuracy']
+    
+    # Training loop
+    for epoch in range(start_epoch, args.epochs):
+        train_sampler.set_epoch(epoch)
+        
+        train_loss, train_acc = train_epoch(
+            model, train_loader, optimizer, scheduler, scaler,
+            criterion, device, epoch, args, local_rank
+        )
+        
+        val_loss, val_acc = validate(model, val_loader, criterion, device, local_rank, args)
+        
+        # Save checkpoint (only on rank 0)
+        if local_rank == 0:
+            is_best = val_acc > best_accuracy
+            best_accuracy = max(val_acc, best_accuracy)
+            save_checkpoint(
+                model, optimizer, scheduler, scaler,
+                epoch, best_accuracy, args, is_best
+            )
+
+    if local_rank == 0:
+        print(f"Training completed. Best accuracy: {best_accuracy:.2f}%")
+    
+    dist.destroy_process_group()
+
+if __name__ == "__main__":
+    args = arguments()
+    main(args)
