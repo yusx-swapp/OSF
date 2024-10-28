@@ -20,7 +20,7 @@ from torch.cuda.amp import autocast, GradScaler
 import math
 import time
 from pathlib import Path
-
+import gc
 def get_optimizer(model, args):
     """Initialize optimizer"""
     if args.optimizer == "adamw":
@@ -146,6 +146,12 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, criterion, de
     avg_loss = total_loss / (len(train_loader) * dist.get_world_size())
     accuracy = 100. * correct / total
     
+    
+    # Clear batch variables to avoid memory buildup
+    del images, labels, outputs, loss, predicted
+    gc.collect()
+    torch.cuda.empty_cache()
+    
     return avg_loss, accuracy
 
 @torch.no_grad()
@@ -183,6 +189,11 @@ def validate(model, val_loader, criterion, device, local_rank, args):
     if local_rank == 0:
         print(f'\nValidation set: Average loss: {val_loss:.4f}, '
               f'Accuracy: {correct}/{total} ({accuracy:.2f}%)\n')
+            # Clear batch variables to avoid memory buildup
+    
+    del images, labels, outputs, loss, predicted
+    gc.collect()
+    torch.cuda.empty_cache()
     
     return val_loss, accuracy
 
@@ -210,7 +221,7 @@ def save_checkpoint(model, optimizer, scheduler, scaler, epoch, best_accuracy, a
         
     # Save elastic config if used
     if args.elastic_config and is_best:
-        ir.save_elastic_config(checkpoint_dir / "elastic_space.json")
+        ir.model.save_elastic_config(checkpoint_dir / "elastic_space.json")
 
 def main(args):
     local_rank, world_size, global_rank, device = setup()
@@ -369,6 +380,11 @@ def main(args):
                 model, optimizer, scheduler, scaler,
                 epoch, best_accuracy, args, is_best
             )
+            
+        # Synchronize all processes to prevent memory buildup before next epoch
+        dist.barrier()
+        gc.collect()
+        torch.cuda.empty_cache()
 
     if local_rank == 0:
         print(f"Training completed. Best accuracy: {best_accuracy:.2f}%")
