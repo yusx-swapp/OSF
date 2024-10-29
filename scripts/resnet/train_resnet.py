@@ -344,7 +344,7 @@ def main(args):
     optimizer = get_optimizer(model, args)
     num_training_steps = len(train_loader) * args.epochs
     scheduler = get_scheduler(optimizer, args, num_training_steps)
-    scaler = GradScaler(enabled=args.fp16)
+    scaler = torch.amp.GradScaler('cuda', enabled=args.fp16)
     criterion = torch.nn.CrossEntropyLoss()
     
     # Resume from checkpoint if specified
@@ -360,7 +360,8 @@ def main(args):
         scaler.load_state_dict(checkpoint['scaler_state_dict'])
         start_epoch = checkpoint['epoch']
         best_accuracy = checkpoint['best_accuracy']
-    
+
+    model = torch.compile(model)    
     # Training loop
     for epoch in range(start_epoch, args.epochs):
         train_sampler.set_epoch(epoch)
