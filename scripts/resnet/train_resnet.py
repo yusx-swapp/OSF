@@ -85,7 +85,7 @@ def setup():
     
     return local_rank, world_size, global_rank, device
 
-def train_epoch(model, train_loader, optimizer, scheduler, scaler, criterion, device, epoch, args, local_rank):
+def train_epoch(model, train_loader, optimizer, scheduler, criterion, device, epoch, args, local_rank):
     """Training loop for one epoch with mixed precision"""
     model.train()
     total_loss = 0
@@ -111,10 +111,14 @@ def train_epoch(model, train_loader, optimizer, scheduler, scaler, criterion, de
             loss = criterion(outputs.logits, labels)
         
         # Scale loss and backward pass
-        scaler.scale(loss).backward()
-        scaler.step(optimizer)
-        scaler.update()
+        # scaler.scale(loss).backward()
+        # scaler.step(optimizer)
+        # scaler.update()
+        
+        loss.backward()
+        optimizer.step()
         optimizer.zero_grad()
+        
         
         # Update learning rate
         scheduler.step()
@@ -192,19 +196,19 @@ def validate(model, val_loader, criterion, device, local_rank, args):
             # Clear batch variables to avoid memory buildup
     
     del images, labels, outputs, loss, predicted
-    gc.collect()
-    torch.cuda.empty_cache()
+    # gc.collect()
+    # torch.cuda.empty_cache()
     
     return val_loss, accuracy
 
-def save_checkpoint(model, optimizer, scheduler, scaler, epoch, best_accuracy, args, is_best=False):
+def save_checkpoint(model, optimizer, scheduler, epoch, best_accuracy, args, is_best=False):
     """Save training checkpoint"""
     checkpoint = {
         'epoch': epoch,
         'model_state_dict': model.module.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict(),
-        'scaler_state_dict': scaler.state_dict(),
+        # 'scaler_state_dict': scaler.state_dict(),
         'best_accuracy': best_accuracy,
     }
     
@@ -344,7 +348,7 @@ def main(args):
     optimizer = get_optimizer(model, args)
     num_training_steps = len(train_loader) * args.epochs
     scheduler = get_scheduler(optimizer, args, num_training_steps)
-    scaler = GradScaler('cuda', enabled=args.fp16)
+    # scaler = GradScaler('cuda', enabled=args.fp16)
     criterion = torch.nn.CrossEntropyLoss()
     
     # Resume from checkpoint if specified
@@ -357,7 +361,7 @@ def main(args):
         model.module.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        scaler.load_state_dict(checkpoint['scaler_state_dict'])
+        # scaler.load_state_dict(checkpoint['scaler_state_dict'])
         start_epoch = checkpoint['epoch']
         best_accuracy = checkpoint['best_accuracy']
 
@@ -367,7 +371,7 @@ def main(args):
         train_sampler.set_epoch(epoch)
         
         train_loss, train_acc = train_epoch(
-            model, train_loader, optimizer, scheduler, scaler,
+            model, train_loader, optimizer, scheduler,
             criterion, device, epoch, args, local_rank
         )
         
@@ -378,7 +382,7 @@ def main(args):
             is_best = val_acc > best_accuracy
             best_accuracy = max(val_acc, best_accuracy)
             save_checkpoint(
-                model, optimizer, scheduler, scaler,
+                model, optimizer, scheduler,
                 epoch, best_accuracy, args, is_best
             )
             
