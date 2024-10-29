@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 import logging
 from tqdm import tqdm
-from torch.cuda.amp import autocast, GradScaler
+from torch.amp import autocast, GradScaler
 import math
 import time
 from pathlib import Path
@@ -344,7 +344,7 @@ def main(args):
     optimizer = get_optimizer(model, args)
     num_training_steps = len(train_loader) * args.epochs
     scheduler = get_scheduler(optimizer, args, num_training_steps)
-    scaler = torch.amp.GradScaler('cuda', enabled=args.fp16)
+    scaler = GradScaler('cuda', enabled=args.fp16)
     criterion = torch.nn.CrossEntropyLoss()
     
     # Resume from checkpoint if specified
