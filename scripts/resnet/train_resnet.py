@@ -154,7 +154,7 @@ def train_epoch(model, train_loader, optimizer, scheduler, criterion, device, ep
     # Clear batch variables to avoid memory buildup
     del images, labels, outputs, loss, predicted
     gc.collect()
-    torch.cuda.empty_cache()
+    
     
     return avg_loss, accuracy
 
@@ -196,8 +196,8 @@ def validate(model, val_loader, criterion, device, local_rank, args):
             # Clear batch variables to avoid memory buildup
     
     del images, labels, outputs, loss, predicted
-    # gc.collect()
-    # torch.cuda.empty_cache()
+    
+    
     
     return val_loss, accuracy
 
@@ -389,7 +389,7 @@ def main(args):
         # Synchronize all processes to prevent memory buildup before next epoch
         dist.barrier()
         gc.collect()
-        torch.cuda.empty_cache()
+    
 
     if local_rank == 0:
         print(f"Training completed. Best accuracy: {best_accuracy:.2f}%")
