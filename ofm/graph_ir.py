@@ -198,7 +198,8 @@ class GraphIR:
         # Add dependencies to graph
         if config.dependencies:
             for rule in config.dependencies:
-                self.add_dependency_rule(rule)
+                if rule:
+                    self.add_dependency_rule(rule)
     def set_block_elastic_config(self, group_name: str, config: BlockElasticConfig):
         """Set block elastic configuration for a group of blocks."""
         self.block_elastic_config_dict[group_name] = config
@@ -465,7 +466,10 @@ class GraphIR:
             module_class = type(original_module)
             
         
-        
+            # Get initialization arguments from metadata
+            # init_args = self.metadata_dict[module_name]['init_args'].copy()
+            # init_args.update(config)
+               
             new_module = module_class(**config)
             
             # Replace the module in subnet
