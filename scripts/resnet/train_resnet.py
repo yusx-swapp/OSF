@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.distributed import DistributedSampler
 import logging
 from tqdm import tqdm
-from torch.amp import autocast, GradScaler
+# from torch.amp import autocast, GradScaler
 import math
 import time
 from pathlib import Path
@@ -106,9 +106,9 @@ def train_epoch(model, train_loader, optimizer, scheduler, criterion, device, ep
         labels = batch["labels"].to(device, non_blocking=True)
         
         # Mixed precision training
-        with autocast(enabled=args.fp16):
-            outputs = model(images)
-            loss = criterion(outputs.logits, labels)
+        # with autocast(enabled=args.fp16):
+        outputs = model(images)
+        loss = criterion(outputs.logits, labels)
         
         # Scale loss and backward pass
         # scaler.scale(loss).backward()
@@ -173,9 +173,9 @@ def validate(model, val_loader, criterion, device, local_rank, args):
         images = batch["pixel_values"].to(device, non_blocking=True)
         labels = batch["labels"].to(device, non_blocking=True)
         
-        with autocast(enabled=args.fp16):
-            outputs = model(images)
-            loss = criterion(outputs.logits, labels)
+        # with autocast(enabled=args.fp16):
+        outputs = model(images)
+        loss = criterion(outputs.logits, labels)
         
         val_loss += loss.item()
         _, predicted = outputs.logits.max(1)
