@@ -747,4 +747,4 @@ def get_resnet50_elastic_configs() -> Dict[str, ElasticConfig]:
     )
     return elastic_configs
 
-ELASTIC_CONFIGS = get_resnet50_elastic_configs()
+ELASTIC_CONFIGS = get_resnet50_elastic_configs_finegrained()
