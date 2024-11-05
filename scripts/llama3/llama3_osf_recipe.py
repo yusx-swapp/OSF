@@ -409,6 +409,17 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         with training.set_default_dtype(self._dtype), self._device:
             model = config.instantiate(cfg_model)
         
+        import llama3_2_elastic
+        from ofm import GraphIR
+        from ofm.utils import calculate_params
+        ir = GraphIR(model)
+        for module_name, config in llama3_2_elastic.LLAMA_ELASTIC_CONFIGS.items():
+            ir.set_elastic_config(module_name, config)
+        sampled_configs = ir.sample_min_elastic_config()
+        model = ir.create_subnet(sampled_configs)
+        params = calculate_params(model)
+        print(f"Params: {params}")
+
         self._lora_rank = cfg_model.lora_rank
         self._lora_alpha = cfg_model.lora_alpha
         self._lora_attn_modules = list(cfg_model.lora_attn_modules)
