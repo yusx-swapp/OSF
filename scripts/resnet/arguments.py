@@ -59,7 +59,7 @@ def arguments():
     parser.add_argument(
         "--epochs",
         type=int,
-        default=90,
+        default=200,
         help="Number of training epochs"
     )
     
@@ -143,7 +143,7 @@ def arguments():
     parser.add_argument(
         "--cache_dir",
         type=str,
-        default="/scratch/bcha/syu2/",
+        default="~/.cache/huggingface/datasets",
         help="Cache directory for datasets and models"
     )
     
