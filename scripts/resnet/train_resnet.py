@@ -320,6 +320,9 @@ def main(args):
         ignore_mismatched_sizes=True
     )
 
+    checkpoint_dir = Path(args.output_dir)
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    
     # Apply elastic configurations if specified
     
     ir = GraphIR(model)
