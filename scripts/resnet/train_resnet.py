@@ -328,8 +328,14 @@ def main(args):
         ir.set_elastic_config(module_name, config)
     # Only rank 0 samples configuration
     if dist.get_rank() == 0:
-        # sampled_configs = ir.sample_elastic_configs()
-        sampled_configs = ir.sample_min_elastic_config()
+        sampled_configs = ir.sample_elastic_configs()
+        try:
+            torch.save(sampled_configs, os.path.join(args.output_dir, "sampled_configs.pth"))
+        except:
+            #save the json
+            with open(os.path.join(args.output_dir, "sampled_configs.json"), "w") as f:
+                json.dump(sampled_configs, f)
+        # sampled_configs = ir.sample_min_elastic_config()
     else:
         sampled_configs = None
 
@@ -341,7 +347,13 @@ def main(args):
 
     # Create identical subnet on all ranks
     model = ir.create_subnet(sampled_configs)
-
+    
+    try:
+        from ofm.utils import calculate_params
+        print("Params: ", calculate_params(model))
+    except:
+        pass
+    
     model = model.to(device)
     model = DDP(model, device_ids=[local_rank], output_device=local_rank)
     # Initialize optimizer, scheduler, and scaler
