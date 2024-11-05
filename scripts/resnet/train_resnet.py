@@ -370,12 +370,17 @@ def main(args):
         if global_rank == 0:
             print(f"Loading checkpoint from {args.resume_ckpt}")
         checkpoint = torch.load(args.resume_ckpt, map_location=device)
-        model.module.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-        # scaler.load_state_dict(checkpoint['scaler_state_dict'])
-        start_epoch = checkpoint['epoch']
-        best_accuracy = checkpoint['best_accuracy']
+        try:
+            model.module.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+            scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+            # scaler.load_state_dict(checkpoint['scaler_state_dict'])
+            start_epoch = checkpoint['epoch']
+            best_accuracy = checkpoint['best_accuracy']
+
+        except:
+            print("Failed to load checkpoint")
+            
 
     model = torch.compile(model)    
     # Training loop
