@@ -413,8 +413,8 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         from ofm import GraphIR
         from ofm.utils import calculate_params
         ir = GraphIR(model)
-        for module_name, config in llama3_2_elastic.LLAMA_ELASTIC_CONFIGS.items():
-            ir.set_elastic_config(module_name, config)
+        for module_name, elastic_config in llama3_2_elastic.LLAMA_ELASTIC_CONFIGS.items():
+            ir.set_elastic_config(module_name, elastic_config)
         sampled_configs = ir.sample_min_elastic_config()
         model = ir.create_subnet(sampled_configs)
         params = calculate_params(model)
