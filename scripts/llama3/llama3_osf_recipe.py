@@ -1,6 +1,6 @@
-
 import sys
 import time
+import os
 
 from functools import partial
 from typing import Any, Dict, Optional, Tuple, Union
@@ -396,7 +396,6 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
             self.profiler_active_steps = profiler_cfg["active_steps"]
 
         return profiler
-
     def _setup_model(
         self,
         cfg_model: DictConfig,
@@ -407,13 +406,133 @@ class LoRAFinetuneRecipeSingleDevice(FTRecipeInterface):
         lora_weights_state_dict: Optional[Dict[str, Any]] = None,
     ) -> nn.Module:
         with training.set_default_dtype(self._dtype), self._device:
+            # 1. First load the base model
+            from transformers import AutoModelForCausalLM
+            try:
+                model = AutoModelForCausalLM.from_pretrained(
+                    "meta-llama/Meta-Llama-3.2-3B-Instruct",
+                    torch_dtype=self._dtype,  # Add dtype specification
+                    device_map="auto"  # Optional: for better memory management
+                )
+            except Exception as e:
+                log.error(f"Failed to load model: {e}")
+                raise
+
+            # 2. Apply OSF subnet creation
+            import llama3_2_elastic
+            from ofm import GraphIR
+            from ofm.utils import calculate_params
+            
+            ir = GraphIR(model)
+            LLAMA_ELASTIC_CONFIGS = llama3_2_elastic.get_llama_mlp_elastic_configs("model.layers")
+            for module_name, elastic_config in LLAMA_ELASTIC_CONFIGS.items():
+                ir.set_elastic_config(module_name, elastic_config)
+            sampled_configs = ir.sample_min_elastic_config()
+            configs_save_path = os.path.join(self._output_dir, "llama_32_3b_sampled_configs.pth")
+            torch.save(sampled_configs, configs_save_path)
+            log.info(f"Saved sampled configs to {configs_save_path}")
+            model = ir.create_subnet(sampled_configs)
+
+            params = calculate_params(model)
+            print(f"Params: {params}")
+
+            # 3. Add LoRA based on config
+            self._lora_rank = cfg_model.lora_rank
+            self._lora_alpha = cfg_model.lora_alpha
+            self._lora_attn_modules = list(cfg_model.lora_attn_modules)
+            self._lora_dropout = cfg_model.get('lora_dropout', 0.0)
+            self._apply_lora_to_mlp = cfg_model.apply_lora_to_mlp
+            self._apply_lora_to_output = getattr(cfg_model, "apply_lora_to_output", False)
+
+            # Apply LoRA transformations to the model
+            from torchtune.modules.peft import add_lora_layers
+            model = add_lora_layers(
+                model,
+                lora_rank=self._lora_rank,
+                lora_alpha=self._lora_alpha,
+                target_modules=self._lora_attn_modules,
+                dropout=self._lora_dropout,
+                apply_to_mlp=self._apply_lora_to_mlp,
+                apply_to_output=self._apply_lora_to_output
+            )
+
+            # Get adapter parameters and set trainable params
+            self.adapter_params = get_adapter_params(model)
+            self._is_dora = any(["magnitude" in k for k in self.adapter_params.keys()])
+            set_trainable_params(model, self.adapter_params)
+
+            if compile_model:
+                training.compile_model(model)
+
+            if enable_activation_checkpointing:
+                training.set_activation_checkpointing(
+                    model, auto_wrap_policy={modules.TransformerSelfAttentionLayer}
+                )
+
+            # 4. Load state dict
+            # base_missing, base_unexpected = model.load_state_dict(
+            #     base_model_state_dict, strict=False
+            # )
+
+            # Handle DoRA initialization if needed
+            if self._is_dora:
+                for m in model.modules():
+                    if hasattr(m, "initialize_dora_magnitude"):
+                        m.initialize_dora_magnitude()
+                load_dora_magnitudes(model)
+
+            if lora_weights_state_dict:
+                lora_missing, lora_unexpected = model.load_state_dict(
+                    lora_weights_state_dict, strict=False
+                )
+            else:
+                lora_missing, lora_unexpected = None, None
+
+            # validate_missing_and_unexpected_for_lora(
+            #     lora_attn_modules=self._lora_attn_modules,
+            #     apply_lora_to_mlp=self._apply_lora_to_mlp,
+            #     apply_lora_to_output=self._apply_lora_to_output,
+            #     base_missing=base_missing,
+            #     base_unexpected=base_unexpected,
+            #     lora_missing=lora_missing,
+            #     lora_unexpected=lora_unexpected,
+            # )
+
+            # Validate model adapter params were loaded with the expected dtype
+            training.validate_expected_param_dtype(
+                self.adapter_params.items(), dtype=self._dtype
+            )
+
+            # activation offloading
+            self.activations_handling_ctx = training.get_act_offloading_ctx_manager(
+                model, enable_activation_offloading
+            )
+
+            log.info(f"Model is initialized with precision {self._dtype}.")
+
+            if self._device.type == "cuda":
+                memory_stats = training.get_memory_stats(device=self._device)
+                training.log_memory_stats(memory_stats)
+
+            return model
+    def _setup_model_(
+        self,
+        cfg_model: DictConfig,
+        enable_activation_checkpointing: bool,
+        enable_activation_offloading: bool,
+        compile_model: bool,
+        base_model_state_dict: Dict[str, Any],
+        lora_weights_state_dict: Optional[Dict[str, Any]] = None,
+    ) -> nn.Module:
+        with training.set_default_dtype(self._dtype), self._device:
             model = config.instantiate(cfg_model)
-        
+        print(model)
         import llama3_2_elastic
         from ofm import GraphIR
         from ofm.utils import calculate_params
         ir = GraphIR(model)
-        for module_name, elastic_config in llama3_2_elastic.LLAMA_ELASTIC_CONFIGS.items():
+        LLAMA_ELASTIC_CONFIGS = llama3_2_elastic.get_llama_mlp_elastic_configs("model.module.layers")
+        for module_name, elastic_config in LLAMA_ELASTIC_CONFIGS.items():
             ir.set_elastic_config(module_name, elastic_config)
         sampled_configs = ir.sample_min_elastic_config()
         model = ir.create_subnet(sampled_configs)
