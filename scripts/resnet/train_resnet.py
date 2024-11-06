@@ -208,7 +208,6 @@ def save_checkpoint(model, optimizer, scheduler, epoch, best_accuracy, args, is_
         'model_state_dict': model.module.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'scheduler_state_dict': scheduler.state_dict(),
-        # 'scaler_state_dict': scaler.state_dict(),
         'best_accuracy': best_accuracy,
     }
     
@@ -363,7 +362,6 @@ def main(args):
     optimizer = get_optimizer(model, args)
     num_training_steps = len(train_loader) * args.epochs
     scheduler = get_scheduler(optimizer, args, num_training_steps)
-    # scaler = GradScaler('cuda', enabled=args.fp16)
     criterion = torch.nn.CrossEntropyLoss()
     
     # Resume from checkpoint if specified
@@ -377,7 +375,6 @@ def main(args):
             model.module.load_state_dict(checkpoint['model_state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
             scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
-            # scaler.load_state_dict(checkpoint['scaler_state_dict'])
             start_epoch = checkpoint['epoch']
             best_accuracy = checkpoint['best_accuracy']
 
