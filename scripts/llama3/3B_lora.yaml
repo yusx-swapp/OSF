@@ -26,7 +26,7 @@ tokenizer:
 # Model Arguments
 model:
   _component_: torchtune.models.llama3_2.lora_llama3_2_3b
-  lora_attn_modules: ['q_proj', 'v_proj', 'gate_proj','up_proj','down_proj']
+  lora_attn_modules: ['q_proj', 'v_proj']
   apply_lora_to_mlp: True
   apply_lora_to_output: False
   lora_rank: 64
