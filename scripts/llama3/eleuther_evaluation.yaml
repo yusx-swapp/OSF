@@ -7,14 +7,19 @@
 model:
   _component_: torchtune.models.llama3_2.llama3_2_3b
 
+ir:
+  subnet_config_path: /work/hdd/bcha/syu2/llama3_2/Llama-3.2-3B-Instruct-hf/OSF-random-new/llama_32_3b_sampled_configs.pth
+
 checkpointer:
   _component_: torchtune.training.FullModelHFCheckpointer
-  checkpoint_dir: /work/hdd/bcha/syu2/llama3_2/Llama-3.2-3B-Instruct-hf/
+  checkpoint_dir: /work/hdd/bcha/syu2/llama3_2/Llama-3.2-3B-Instruct-hf/OSF-random-new/
   checkpoint_files: [
-       model-00001-of-00002.safetensors,
-       model-00002-of-00002.safetensors,
+      #  model-00001-of-00002.safetensors,
+      hf_model_0001_0.pt,
+      hf_model_0002_0.pt,
+      #  model-00002-of-00002.safetensors,
     ]
-  output_dir: /work/hdd/bcha/syu2/llama3_2/Llama-3.2-3B-Instruct-hf/
+  output_dir: /work/hdd/bcha/syu2/llama3_2/Llama-3.2-3B-Instruct-hf/OSF-random-new/
   model_type: LLAMA3_2
 
 # Tokenizer
