@@ -5,9 +5,9 @@ from datasets import load_dataset
 import functools
 import evaluate
 from arguments import arguments
-from ofm import OFM
-from ofm.trainer import TrainingArguments
-from ofm.trainer import CLIPTrainer as Trainer
+from osf import OFM
+from osf.trainer import TrainingArguments
+from osf.trainer import CLIPTrainer as Trainer
 
 import functools
 from datasets import load_dataset

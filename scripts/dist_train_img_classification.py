@@ -6,9 +6,9 @@ import functools
 import evaluate
 from transformers import AutoImageProcessor, AutoModelForImageClassification
 from arguments import arguments
-from ofm.distribute_trainer import TrainingArguments, DistributedTrainer
+from osf.distribute_trainer import TrainingArguments, DistributedTrainer
 import torch.multiprocessing as mp
-from ofm import OFM
+from osf import OFM
 
 
 def compute_metrics(eval_pred):
@@ -178,3 +178,4 @@ if __name__ == "__main__":
     # main(0, world_size, args)
     # mp.spawn(main, args=(world_size, args), nprocs=world_size, join=True)
 # python train_vit.py --model vit --save_dir ckpts/vit-base  --dataset cifar100 --num_shards 20 --elastic_config scripts/elastic_space.json
+

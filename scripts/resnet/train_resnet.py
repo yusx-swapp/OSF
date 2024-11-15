@@ -7,7 +7,7 @@ import evaluate
 from transformers import AutoImageProcessor, AutoModelForImageClassification
 from arguments import arguments
 import torch.multiprocessing as mp
-from ofm import OFM, GraphIR
+from osf import OFM, GraphIR
 import resnet_elastic
 import copy
 import torch.distributed as dist
@@ -351,7 +351,7 @@ def main(args):
     model = ir.create_subnet(sampled_configs)
     
     try:
-        from ofm.utils import calculate_params
+        from osf.utils import calculate_params
         print("Params: ", calculate_params(model))
     except:
         pass
