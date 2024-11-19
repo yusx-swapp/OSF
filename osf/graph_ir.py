@@ -5,11 +5,11 @@ from typing import Dict, Any, Optional, List, Set, Tuple
 from .elasticity import ElasticRange, DependencyRule, ElasticConfig, ElasticityType, BlockElasticConfig
 import numpy as np
 from copy import deepcopy
-
+import torch
 class GraphIR:
     def __init__(self, model: nn.Module):
         
-        self.model = model
+        self.supernet = model
         # Store original weights
         self.weights_dict = OrderedDict(model.state_dict())
         # Main metadata dictionary
@@ -34,6 +34,8 @@ class GraphIR:
         Two possible approaches:
         1. Gradient copying (if we need gradient accumulation):
         """
+        #make the subnet and supernet in the same device
+        subnet = subnet.to(supernet.device)
         for super_param, subnet_param in zip(supernet.parameters(), subnet.parameters()):
             if subnet_param.grad is not None:
                 # Handle different tensor sizes
@@ -142,7 +144,7 @@ class GraphIR:
     
     def _build_ir(self):
         """Build metadata dictionary for user-defined modules."""
-        for name, module in self.model.named_modules():
+        for name, module in self.supernet.named_modules():
 
             
             metadata = self._create_module_metadata(name, module)
@@ -451,7 +453,7 @@ class GraphIR:
             nn.Module: A new model instance with the sampled configurations
         """
         # Create a deep copy of the original model
-        subnet = deepcopy(self.model)
+        subnet = deepcopy(self.supernet)
         
         # For each module in the sampled configs
         for module_name, config in sampled_configs.items():
@@ -480,7 +482,7 @@ class GraphIR:
         return subnet
     def create_subnet(self, sampled_configs: Dict[str, Dict[str, Any]]) -> nn.Module:
         """Create a subnet based on the sampled elastic configurations."""
-        subnet = deepcopy(self.model)
+        subnet = deepcopy(self.supernet)
        
         def fix_module_children(new_mod, orig_mod):
             for name, child in new_mod.named_children():
