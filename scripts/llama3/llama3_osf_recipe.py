@@ -425,8 +425,8 @@ class LoRAFinetuneRecipeDistributed(FTRecipeInterface):
         if is_dora:
             load_dora_magnitudes(model)
         import llama3_2_elastic
-        from ofm import GraphIR
-        from ofm.utils import calculate_params
+        from osf import GraphIR
+        from osf.utils import calculate_params
         ir = GraphIR(model)
         
         LLAMA_ELASTIC_CONFIGS = llama3_2_elastic.LLAMA_LORA_ELASTIC_CONFIGS

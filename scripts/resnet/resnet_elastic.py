@@ -1,6 +1,6 @@
 
 from typing import Dict,Optional
-from ofm import ElasticConfig, ElasticityType, ElasticRange, DependencyRule
+from osf import ElasticConfig, ElasticityType, ElasticRange, DependencyRule
 
 def get_resnet50_elastic_configs_finegrained() -> Dict[str, ElasticConfig]:
     elastic_configs = {}

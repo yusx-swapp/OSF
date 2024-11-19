@@ -2,7 +2,7 @@ from typing import Dict
 from dataclasses import dataclass
 import torch.nn as nn
 from typing import Optional, List
-from ofm import ElasticConfig, ElasticRange, DependencyRule
+from osf import ElasticConfig, ElasticRange, DependencyRule
 
 
 def get_llama_mlp_elastic_configs(model_path: str = "model.layers") -> Dict[str, ElasticConfig]:

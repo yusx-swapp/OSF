@@ -488,7 +488,7 @@ class EleutherEvalRecipe(EvalRecipeInterface):
             model = config.instantiate(cfg.model)
         
         import llama3_2_elastic
-        from ofm import GraphIR
+        from osf import GraphIR
         ir = GraphIR(model)
 
         LLAMA_ELASTIC_CONFIGS = llama3_2_elastic.LLAMA_TORCHTUNE_ELASTIC_CONFIGS
