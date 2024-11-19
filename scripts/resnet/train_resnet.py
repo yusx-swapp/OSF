@@ -185,6 +185,8 @@ def train_epoch_supernet(supernet, train_loader, optimizer, scheduler, criterion
         # Create and move subnet to GPU
         subnet = ir.create_subnet(sampled_configs)
         subnet = subnet.to(device)
+        if local_rank == 0:
+            step_start_time = time.time()
         
         # Forward pass
         outputs = subnet(images)
@@ -206,7 +208,11 @@ def train_epoch_supernet(supernet, train_loader, optimizer, scheduler, criterion
         optimizer.step()
         optimizer.zero_grad()
         scheduler.step()
-        
+        if local_rank == 0:
+            step_end_time = time.time()
+            step_time = step_end_time - step_start_time
+            print(f"Step time: {step_time:.4f} seconds")
+            
         # Compute accuracy
         with torch.no_grad():
             _, predicted = outputs.logits.max(1)
