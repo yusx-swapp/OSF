@@ -127,7 +127,7 @@ class LoRAFinetuneRecipeDistributed(FTRecipeInterface):
         # _is_rank_zero is used primarily for logging. In the future, the logger
         # should directly take care of this
         self._is_rank_zero = rank == 0
-        self.ir.subnet_config_path = cfg.ir.subnet_config_path
+        self._subnet_config_path = cfg.ir.subnet_config_path
         # logging attributes
         self._output_dir = cfg.output_dir
         self._log_every_n_steps = cfg.get("log_every_n_steps", 1)
@@ -438,10 +438,10 @@ class LoRAFinetuneRecipeDistributed(FTRecipeInterface):
         # sampled_configs = ir.sample_elastic_configs()
 
         # Save configs if rank zero
-        configs_save_path = os.path.join(self._output_dir, "llama_32_3b_sampled_configs.pth")
+        configs_save_path = os.path.join(self._subnet_config_path, "llama_32_3b_sampled_configs.pth")
 
         if self._is_rank_zero:
-            os.makedirs(self._output_dir, exist_ok=True)
+            os.makedirs(self._subnet_config_path, exist_ok=True)
             torch.save(sampled_configs, configs_save_path)
             log.info(f"Saved sampled configs to {configs_save_path}")
         torch.distributed.barrier()
