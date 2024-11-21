@@ -255,43 +255,55 @@ def validate_supernet(supernet, val_loader, criterion, device, local_rank, args,
     """Validation loop for supernet using sampled subnets."""
     supernet.eval()
     supernet = supernet.cpu()  # Keep supernet on CPU
-    val_loss = 0
-    correct = 0
-    total = 0
     
-    if local_rank == 0:
-        val_loader = tqdm(val_loader, desc="Validation")
+    # Sample subnets once before validation
+    num_samples = args.val_subnet_samples
+    all_val_losses = []
+    all_corrects = []
+    all_totals = []
     
-    for batch in val_loader:
-        images = batch["pixel_values"].to(device, non_blocking=True)
-        labels = batch["labels"].to(device, non_blocking=True)
+    for sample_idx in range(num_samples):
+        val_loss = 0
+        correct = 0
+        total = 0
         
-        # Sample and evaluate multiple subnets for each batch
-        batch_loss = 0
-        batch_correct = 0
-        num_samples = args.val_subnet_samples  # Number of subnets to evaluate per batch
+        # Sample one subnet configuration
+        sampled_configs = ir.sample_elastic_configs()
+        subnet = ir.create_subnet(sampled_configs)
+        subnet = subnet.to(device)
         
-        for _ in range(num_samples):
-            sampled_configs = ir.sample_elastic_configs()
-            subnet = ir.create_subnet(sampled_configs)
-            subnet = subnet.to(device)
+        if local_rank == 0:
+            val_loader_iter = tqdm(val_loader, desc=f"Validation Subnet {sample_idx+1}/{num_samples}")
+        else:
+            val_loader_iter = val_loader
+        
+        for batch in val_loader_iter:
+            images = batch["pixel_values"].to(device, non_blocking=True)
+            labels = batch["labels"].to(device, non_blocking=True)
             
             outputs = subnet(images)
             loss = criterion(outputs.logits, labels)
             
-            batch_loss += loss.item()
+            val_loss += loss.item()
             _, predicted = outputs.logits.max(1)
-            batch_correct += predicted.eq(labels).sum().item()
-            
-            del subnet
-            torch.cuda.empty_cache()
+            total += labels.size(0)
+            correct += predicted.eq(labels).sum().item()
         
-        # Average results for this batch
-        val_loss += batch_loss / num_samples
-        correct += batch_correct / num_samples
-        total += labels.size(0)
-    params = calculate_params(subnet)
-    print(f"In rank: {local_rank}, params: {params}, val loss: {val_loss}, correct: {correct}, total: {total}")
+        # if sample_idx == 0:  # Only print params once
+        params = calculate_params(subnet)
+        print(f"Subnet {sample_idx+1}/{num_samples}, In rank: {local_rank}, params: {params}")
+        
+        all_val_losses.append(val_loss)
+        all_corrects.append(correct)
+        all_totals.append(total)
+        print(f"Subnet {sample_idx+1}/{num_samples}, In rank: {local_rank}, val loss: {val_loss}, correct: {correct}, total: {total}, accuracy: {100. * correct / total:.2f}%")
+        del subnet
+        torch.cuda.empty_cache()
+    
+    # Average results across all sampled subnets
+    val_loss = sum(all_val_losses) / num_samples
+    correct = sum(all_corrects) / num_samples
+    total = all_totals[0]  # All totals should be the same
     
     # Gather metrics from all processes
     metrics = torch.tensor([val_loss, correct, total], device=device)
