@@ -579,20 +579,36 @@ def supernet_train_main(args):
         from huggingface_hub import login
         login(args.huggingface_token, add_to_git_credential=True)
 
-    # Load and prepare dataset
-    dataset = load_dataset(
-        args.dataset,
-        cache_dir=args.cache_dir,
-        trust_remote_code=True,
-        split=['train', 'validation']
-    )
-    
-    dataset = {
-        'train': dataset[0],
-        'validation': dataset[1]
-    }
 
-    if args.dataset == "imagenet-1k":
+    if args.dataset in ["cifar100", "cifar10"]:
+        dataset = load_dataset(
+            args.dataset, cache_dir=args.cache_dir, trust_remote_code=True
+        )
+        
+        if args.dataset == "cifar100":
+            dataset = dataset.rename_column("fine_label", "label")
+
+        train_val = dataset["train"].train_test_split(
+            test_size=0.2, stratify_by_column="label", seed=123
+        )
+        dataset["train"] = train_val["train"]
+        dataset["validation"] = train_val["test"]
+    elif args.dataset == "imagenet-1k":
+        # Load and prepare dataset
+        dataset = load_dataset(
+            args.dataset,
+            cache_dir=args.cache_dir,
+            trust_remote_code=True,
+            split=['train', 'validation']
+        )
+
+    
+        dataset = {
+            'train': dataset[0],
+            'validation': dataset[1]
+        }
+
+    
         dataset['train'] = dataset['train'].rename_column("image", "img")
         dataset['validation'] = dataset['validation'].rename_column("image", "img")
 
