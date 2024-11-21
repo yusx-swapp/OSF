@@ -168,5 +168,12 @@ def arguments():
         help="Path to elastic configuration file"
     )
 
+    parser.add_argument(
+        "--val_subnet_samples",
+        type=int,
+        default=1,
+        help="Number of subnets to evaluate per batch"
+    )
+
     args = parser.parse_args()
     return args
