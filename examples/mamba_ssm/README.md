@@ -1,15 +1,17 @@
-# Convert Mamba SSM to supernet via OSF
 
-## Experiment Goal
-In this experiment, we will:
+# Mamba SSM Optimization via OSF
 
-- [x] 1. Train selective state space model Mamba using OSF
+## Overview
+This repository demonstrates the application of Optimized Supernet Formation (OSF) to Mamba Selective State Space Models (SSMs). We showcase efficient architecture search while maintaining model performance through our graph-based intermediate representation approach.
 
-- [x] 2. Extract subnets from supernet (> 800M model parameter reduction), and evaluate on Lambda dataset.
+## Objectives
+1. Transform Mamba SSM models into weight-sharing supernets using OSF
+2. Generate and evaluate efficient Mamba subnets achieving >800M parameter reduction while maintaining competitive performance on the Lambda dataset
 
-## Dependencies
-Before starting, you need to install the **[Language Model Evaluation Harness](https://github.com/EleutherAI/lm-evaluation-harness)**. We appreciate their efforts and contributions to the community.:raised_hands:    
-To install the **lm-eval** package from the github repository, run:
+## Prerequisites
+
+### Language Model Evaluation Framework
+This implementation requires the Language Model Evaluation Harness for performance assessment:
 
 ```bash
 git clone https://github.com/EleutherAI/lm-evaluation-harness
@@ -17,64 +19,48 @@ cd lm-evaluation-harness
 pip install -e .
 ```
 
-For more detailed instructions, please see their repo **[Language Model Evaluation Harness](https://github.com/EleutherAI/lm-evaluation-harness)**.
+For comprehensive evaluation protocols, refer to the [official documentation](https://github.com/EleutherAI/lm-evaluation-harness).
 
-## Hands-on Tutorial
-We provide Jupyter Notebook Tutorials for you to validate our results step-by-step: **[Mamba Example](mamba_lm_harness.ipynb)**
-
-
-## Available Supernet checkpoints
-
-We pushed our trained supernets to the Huggingface model hub, you can find the checkpoints in the following links:
-
-- [ ] [Super-Swinv2-base for CIFAR-10](https://huggingface.co/yusx-swapp/ofm-swin-base-patch4-window7-cifar10)
-- [ ] [Super-Swinv2-base for CIFAR-100](https://huggingface.co/yusx-swapp/ofm-swinv2-base-patch4-window7-cifar100/tree/main)
-- [ ] [Super-CLIP-base for CIFAR-10](https://huggingface.co/yusx-swapp/ofm-clip-base-patch32-cifar10)
-- [ ] [Super-CLIP-base for CIFAR-100](https://huggingface.co/yusx-swapp/ofm-clip-base-patch32-cifar100)
-- [ ] [Super-Mamba-1.4B](https://huggingface.co/yusx-swapp/ofm-mamba-1.4b-lambda-hf)
-- [ ] [Super-ViT-Base for ImageNet](https://huggingface.co/yusx-swapp/ofm-vit-base-patch16-224-imagenet)
-- [ ] [Super-ViT-Base for CIFAR-100](https://huggingface.co/yusx-swapp/ofm-vit-base-patch16-224-cifar100)
-- [ ] [Super-ViT-Base for CIFAR-10](https://huggingface.co/yusx-swapp/ofm-vit-base-patch16-224-cifar10)
-
-
-## Run the Experiments
-
-### Installation
-Refer to the detailed [installation](../../README.md) guide.
-
+### Environment Setup
 ```bash
-conda create -n ofm python=3.10
-conda activate ofm
+conda create -n osf python=3.10
+conda activate osf
 conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
 pip install -r requirements.txt
 ```
 
+## Implementation Resources
 
-### Validate the results
+### Tutorial
+We provide a detailed Jupyter notebook demonstrating:
+- Supernet construction methodology
+- Subnet extraction protocols
+- Performance evaluation procedures
+- Results analysis
 
-See tutorial: **[Mamba Example](mamba_lm_harness.ipynb)**
+**Tutorial:** [mamba_lm_harness.ipynb](mamba_lm_harness.ipynb)
 
+### Pre-trained Supernet Models
+Trained supernet checkpoints are available through Hugging Face:
 
+Architecture | Dataset | Model Link
+-------------|----------|-----------
+Swin-v2-base | CIFAR-10 | [Link](https://huggingface.co/yusx-swapp/osf-swin-base-patch4-window7-cifar10)
+Swin-v2-base | CIFAR-100 | [Link](https://huggingface.co/yusx-swapp/osf-swinv2-base-patch4-window7-cifar100)
+CLIP-base | CIFAR-10 | [Link](https://huggingface.co/yusx-swapp/osf-clip-base-patch32-cifar10)
+CLIP-base | CIFAR-100 | [Link](https://huggingface.co/yusx-swapp/osf-clip-base-patch32-cifar100)
+Mamba-1.4B | Lambda | [Link](https://huggingface.co/yusx-swapp/osf-mamba-1.4b-lambda-hf)
+ViT-Base | ImageNet | [Link](https://huggingface.co/yusx-swapp/osf-vit-base-patch16-224-imagenet)
+ViT-Base | CIFAR-100 | [Link](https://huggingface.co/yusx-swapp/osf-vit-base-patch16-224-cifar100)
+ViT-Base | CIFAR-10 | [Link](https://huggingface.co/yusx-swapp/osf-vit-base-patch16-224-cifar10)
 
-<!--
-## Results
+## Empirical Validation
+For detailed experimental results and performance analysis, refer to our comprehensive tutorial: [mamba_lm_harness.ipynb](mamba_lm_harness.ipynb)
 
-We have some simple meta results shown on the tutorial: **[post_training_deployment.ipynb](./post_training_deployment.ipynb)**
+## Citation
+This implementation builds upon the Mamba architecture and evaluation framework. If you use this code, please cite the following works:
 
-| ![Performance vs Params](./figures/RoBERTa_performance_vs_params.png) | ![ViT Performance vs Params](./figures/vit_performance_vs_params.png) |
-| :-------------------------------------------------------------------: | :-------------------------------------------------------------------: |
-|                   Fig.1 - Scalable RoBERTa on SST-2                   |                    Fig.2 - Scalable ViT on CIFAR10                    |
-
-Figure 1 shows the trained RoBERTa on SST-2 dataset, we sample resource-aware scaled submodel in different size, and evaluate without further training, all submodels get the same level of accuracy.
-
-Similarlly, in Figure 2, we show the trained scalable ViT's performance on CIFAR-10, notebally, with half of the parameter scaled out, submodels with 45M parameters (75% FLOPs reduction) achieves 94.5% accuracy without further training.
-
-In summry, Foundation Models trained by RaFFM are scalable, which can enables heterogeneous model deployment post-federated learning without further training. -->
-
-## **Reference**
-:raised_hands: Thanks for the great work from the authors of Mamba and lm-eval, we appreciate your efforts and contributions to the community.:raised_hands:
-```
-
+```bibtex
 @misc{gu2023mamba,
       title={Mamba: Linear-Time Sequence Modeling with Selective State Spaces}, 
       author={Albert Gu and Tri Dao},
@@ -85,7 +71,9 @@ In summry, Foundation Models trained by RaFFM are scalable, which can enables he
 }
 
 @misc{eval-harness,
-  author       = {Gao, Leo and Tow, Jonathan and Abbasi, Baber and Biderman, Stella and Black, Sid and DiPofi, Anthony and Foster, Charles and Golding, Laurence and Hsu, Jeffrey and Le Noac'h, Alain and Li, Haonan and McDonell, Kyle and Muennighoff, Niklas and Ociepa, Chris and Phang, Jason and Reynolds, Laria and Schoelkopf, Hailey and Skowron, Aviya and Sutawika, Lintang and Tang, Eric and Thite, Anish and Wang, Ben and Wang, Kevin and Zou, Andy},
+  author       = {Gao, Leo and Tow, Jonathan and Abbasi, Baber and Biderman, Stella and 
+                 Black, Sid and DiPofi, Anthony and Foster, Charles and Golding, Laurence and 
+                 Hsu, Jeffrey and Le Noac'h, Alain and others},
   title        = {A framework for few-shot language model evaluation},
   month        = 12,
   year         = 2023,
@@ -94,5 +82,5 @@ In summry, Foundation Models trained by RaFFM are scalable, which can enables he
   doi          = {10.5281/zenodo.10256836},
   url          = {https://zenodo.org/records/10256836}
 }
-
 ```
+

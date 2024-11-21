@@ -1,90 +1,88 @@
-# Optimize CLIP via OSF 
 
-## Experiment Goal
-In this experiment, we will:
+# CLIP Architecture Optimization via OSF
 
-- [x] 1. Concert pre-trained CLIP model to supernet use OSM with contrastive loss
+## Overview
+This repository demonstrates the application of Optimized Supernet Formation (OSF) to CLIP (Contrastive Language-Image Pre-training) models. OSF enables efficient architecture search while preserving the model's multi-modal capabilities through contrastive learning.
 
-- [x] 2. Extract CLIP subnets (> 30\% model size reduction), and evaluate on image classification task
+## Objectives
+1. Transform pre-trained CLIP models into weight-sharing supernets using OSF's graph-based intermediate representation
+2. Generate and evaluate efficient CLIP subnets achieving >30% parameter reduction while maintaining competitive performance on image classification tasks
 
+## Implementation Details
 
-## Hands-on Tutorial
-We provide Jupyter Notebook Tutorial for you to validate our results step-by-step, in our tutorial we will show you how to extract subnets and evaluate on image classification task: **[CLIP Tutorial](CLIP_img_classification.ipynb)**
-
-## Aviailable Supernet checkpoints
-
-We pushed our trained supernets to the Huggingface model hub, you can find the checkpoints in the following links:
-
-- [ ] [Super-Swinv2-base for CIFAR-10](https://huggingface.co/yusx-swapp/ofm-swin-base-patch4-window7-cifar10)
-- [ ] [Super-Swinv2-base for CIFAR-100](https://huggingface.co/yusx-swapp/ofm-swinv2-base-patch4-window7-cifar100/tree/main)
-- [ ] [Super-CLIP-base for CIFAR-10](https://huggingface.co/yusx-swapp/ofm-clip-base-patch32-cifar10)
-- [ ] [Super-CLIP-base for CIFAR-100](https://huggingface.co/yusx-swapp/ofm-clip-base-patch32-cifar100)
-- [ ] [Super-Mamba-1.4B](https://huggingface.co/yusx-swapp/ofm-mamba-1.4b-lambda-hf)
-- [ ] [Super-ViT-Base for ImageNet](https://huggingface.co/yusx-swapp/ofm-vit-base-patch16-224-imagenet)
-- [ ] [Super-ViT-Base for CIFAR-100](https://huggingface.co/yusx-swapp/ofm-vit-base-patch16-224-cifar100)
-- [ ] [Super-ViT-Base for CIFAR-10](https://huggingface.co/yusx-swapp/ofm-vit-base-patch16-224-cifar10)
-
-
-
-## Run the Experiments
-
-### Installation
-Refer to the detailed [installation](../../README.md) guide.
-
+### Environment Setup
 ```bash
-conda create -n ofm python=3.10
-conda activate ofm
+conda create -n osf python=3.10
+conda activate osf
 conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia
 pip install -r requirements.txt
 ```
 
+### Experimental Validation
+We provide a comprehensive Jupyter notebook demonstrating:
+- Supernet construction from pre-trained CLIP models
+- Subnet extraction methodology
+- Performance evaluation protocols
+- Empirical results analysis
 
-### Start Training
+**Tutorial:** [CLIP_img_classification.ipynb](CLIP_img_classification.ipynb)
 
+### Pre-trained Supernet Models
+Trained supernet checkpoints are available through Hugging Face:
 
-```bash
-cd OFM/
-```
-Training on single node:
+Architecture | Dataset | Model Link
+-------------|----------|-----------
+Swin-v2-base | CIFAR-10 | [Link](https://huggingface.co/yusx-swapp/osf-swin-base-patch4-window7-cifar10)
+Swin-v2-base | CIFAR-100 | [Link](https://huggingface.co/yusx-swapp/osf-swinv2-base-patch4-window7-cifar100)
+CLIP-base | CIFAR-10 | [Link](https://huggingface.co/yusx-swapp/osf-clip-base-patch32-cifar10)
+CLIP-base | CIFAR-100 | [Link](https://huggingface.co/yusx-swapp/osf-clip-base-patch32-cifar100)
+Mamba-1.4B | Lambda | [Link](https://huggingface.co/yusx-swapp/osf-mamba-1.4b-lambda-hf)
+ViT-Base | ImageNet | [Link](https://huggingface.co/yusx-swapp/osf-vit-base-patch16-224-imagenet)
+ViT-Base | CIFAR-100 | [Link](https://huggingface.co/yusx-swapp/osf-vit-base-patch16-224-cifar100)
+ViT-Base | CIFAR-10 | [Link](https://huggingface.co/yusx-swapp/osf-vit-base-patch16-224-cifar10)
+
+### Training Protocol
+
+#### Single-GPU Training
 ```bash
 python scripts/train_clip_img_classification.py \
---model clip \
---save_dir ckpts/clip-cifar10 \
---dataset cifar10 \
---num_shards 16 \
---lr 2e-5 \
---batch_size 64 \
---log_interval 100 \
---huggingface_token "Your_token_here (optional)"  \ #Mandatory for ImageNet and push your ckpt to Huggingface model hub
---elastic_config scripts/clip_elastic_space.json
-
+    --model clip \
+    --save_dir ckpts/clip-cifar10 \
+    --dataset cifar10 \
+    --num_shards 16 \
+    --lr 2e-5 \
+    --batch_size 64 \
+    --log_interval 100 \
+    --huggingface_token "<token>" \  # Required for ImageNet and model hub uploads
+    --elastic_config scripts/clip_elastic_space.json
 ```
 
-Training on multiple GPUs and wish to lunch distributed training, you can use the following command:
+#### Multi-GPU Distributed Training
 ```bash
-torchrun --nproc_per_node='your numer of gpus' --nnodes=1 scripts/train_clip_img_classification.py \
---model clip \
---save_dir ckpts/clip-cifar10 \
---dataset cifar10 \
---num_shards 16 \
---lr 2e-5 \
---batch_size 64 \
---log_interval 100 \
---huggingface_token "Your_token_here (optional)"  \ #Mandatory for ImageNet and push your ckpt to Huggingface model hub
---elastic_config scripts/clip_elastic_space.json
+torchrun --nproc_per_node=N --nnodes=1 scripts/train_clip_img_classification.py \
+    --model clip \
+    --save_dir ckpts/clip-cifar10 \
+    --dataset cifar10 \
+    --num_shards 16 \
+    --lr 2e-5 \
+    --batch_size 64 \
+    --log_interval 100 \
+    --huggingface_token "<token>" \
+    --elastic_config scripts/clip_elastic_space.json
 ```
 
+## Citation
+This implementation builds upon the CLIP architecture. If you use this code, please cite both our work and the original CLIP paper:
 
-## **Reference**
-:raised_hands: Thanks for the great work from the authors of CLIP, we appreciate your efforts and contributions to the community.:raised_hands:
-```
+```bibtex
 @inproceedings{radford2021learning,
   title={Learning transferable visual models from natural language supervision},
-  author={Radford, Alec and Kim, Jong Wook and Hallacy, Chris and Ramesh, Aditya and Goh, Gabriel and Agarwal, Sandhini and Sastry, Girish and Askell, Amanda and Mishkin, Pamela and Clark, Jack and others},
+  author={Radford, Alec and Kim, Jong Wook and Hallacy, Chris and Ramesh, Aditya and 
+          Goh, Gabriel and Agarwal, Sandhini and Sastry, Girish and Askell, Amanda and 
+          Mishkin, Pamela and Clark, Jack and others},
   booktitle={International conference on machine learning},
   pages={8748--8763},
   year={2021},
   organization={PMLR}
 }
-
 ```
