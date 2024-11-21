@@ -6,7 +6,7 @@ import functools
 import evaluate
 from transformers import AutoImageProcessor, AutoModelForImageClassification
 from arguments import arguments
-from osf.distribute_trainer import TrainingArguments, DistributedTrainer
+from osf.utils.distribute_trainer import TrainingArguments, DistributedTrainer
 import torch.multiprocessing as mp
 from osf import OFM
 

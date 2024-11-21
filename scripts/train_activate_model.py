@@ -7,7 +7,7 @@ import evaluate
 from transformers import AutoImageProcessor, AutoModelForImageClassification
 from arguments import arguments
 from osf import OFM
-from osf.trainer import TrainingArguments, Trainer
+from osf.utils.trainer import TrainingArguments, Trainer
 
 
 def compute_metrics(eval_pred):
