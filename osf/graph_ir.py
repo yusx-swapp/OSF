@@ -21,7 +21,7 @@ class GraphIR:
         
         self.supernet = model
         # Store original weights
-        self.weights_dict = OrderedDict(model.state_dict())
+        self.weights_dict = OrderedDict(self.supernet.state_dict())
         # Main metadata dictionary
         self.metadata_dict = OrderedDict()
         # Dictionary to store new configurations for elastic modules
@@ -190,7 +190,7 @@ class GraphIR:
             subnet: The target subnet with potentially smaller dimensions
         """
         # Get source and target state dicts
-        source_state_dict = self.weights_dict
+        source_state_dict = self.supernet.state_dict()
         target_state_dict = subnet.state_dict()
         
         # Create new state dict for subnet
@@ -208,15 +208,16 @@ class GraphIR:
                         slice(0, min(t_dim, s_dim))
                         for t_dim, s_dim in zip(target_tensor.shape, source_tensor.shape)
                     )
-                    new_state_dict[key] = source_tensor[slices]
+                    new_state_dict[key] = source_tensor[slices].clone()
                 else:
-                    print("dim not match")
-                    continue
-                    # new_state_dict[key] = target_tensor  # Keep original if dimensions don't match
+                    print(f"module {key} dim not match, target shape:{target_tensor.shape}, dim: {target_tensor.dim()}; source shape:{source_tensor.shape}, dim: {source_tensor.dim()}")
+                    print("Weights not copied, keep original")
+                    new_state_dict[key] = target_tensor.clone()  # Keep original if dimensions don't match
             else:
                 # If dimensions don't match, copy the tensor as is
                 # new_state_dict[key] = source_tensor
-                print("dim not match")
+                print(f"module {key} dim not match, target shape:{target_tensor.shape}, dim: {target_tensor.dim()}; source shape:{source_tensor.shape}, dim: {source_tensor.dim()}")
+                new_state_dict[key] = source_tensor.clone()
                 continue
         # Load weights into subnet
         subnet.load_state_dict(new_state_dict)

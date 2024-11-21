@@ -181,7 +181,7 @@ def train_epoch_supernet(supernet, train_loader, optimizer, scheduler, criterion
         
         # Sample subnet configuration
         sampled_configs = ir.sample_elastic_configs()
-        
+
         # Create and move subnet to GPU
         subnet = ir.create_subnet(sampled_configs)
         subnet = subnet.to(device)
@@ -670,10 +670,10 @@ def supernet_train_main(args):
         cache_dir=args.cache_dir,
         ignore_mismatched_sizes=True
     )
-
+    
     # Initialize Graph IR and set elastic configurations
     ir = GraphIR(supernet)
-    configs = copy.deepcopy(resnet_elastic.ELASTIC_CONFIGS)
+    configs = copy.deepcopy(resnet_elastic.ELASTIC_CONFIGS_CIFAR10)
     for module_name, config in configs.items():
         ir.set_elastic_config(module_name, config)
 
