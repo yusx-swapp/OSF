@@ -197,7 +197,7 @@ def train_epoch_supernet(supernet, train_loader, optimizer, scheduler, criterion
         
         # Apply gradients to supernet
         ir.apply_subnet_grads(subnet)
-        
+        ir.supernet.to(device)
         # Sync gradients across ranks
         for param in supernet.parameters():
             if param.grad is not None:
@@ -208,6 +208,7 @@ def train_epoch_supernet(supernet, train_loader, optimizer, scheduler, criterion
         optimizer.step()
         optimizer.zero_grad()
         scheduler.step()
+        ir.supernet.to('cpu')
         if local_rank == 0:
             step_end_time = time.time()
             step_time = step_end_time - step_start_time
