@@ -60,6 +60,8 @@ We will show you how to do that in the following section._**
 
 - [Example on quickly evaluate ViT supernet with high-performance subnets](./examples/post_training_deployment/vit_zero_shot_specialization_turorial.ipynb)
 
+Multiple examples are provided, including ViT, Swin, CLIP, Mamba, and more. You can explore these examples in the [examples](./examples/) folder.
+
 Besides, we also provide a high-level API for you to quickly generate sunets for your supernet with **2 lines of codes**, as shown in the following example:
 
 ```python
