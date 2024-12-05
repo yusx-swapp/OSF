@@ -9,7 +9,7 @@ from lm_eval.api.model import LM
 from lm_eval.models.huggingface import HFLM
 from lm_eval.api.registry import register_model
 from lm_eval.__main__ import cli_evaluate
-from ofm import OFM
+from osf import OFM
 
 
 @register_model("mamba")
