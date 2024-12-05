@@ -15,16 +15,16 @@ We provide a comprehensive Jupyter notebook demonstrating our methodology and re
 
 ### Pre-trained Supernet Models
 
-Available checkpoints through Hugging Face:
-
-- [ ] [Super-Swinv2-base for CIFAR-10](https://huggingface.co/yusx-swapp/osf-swin-base-patch4-window7-cifar10)
-- [ ] [Super-Swinv2-base for CIFAR-100](https://huggingface.co/yusx-swapp/osf-swinv2-base-patch4-window7-cifar100/tree/main)
-- [ ] [Super-CLIP-base for CIFAR-10](https://huggingface.co/yusx-swapp/osf-clip-base-patch32-cifar10)
-- [ ] [Super-CLIP-base for CIFAR-100](https://huggingface.co/yusx-swapp/osf-clip-base-patch32-cifar100)
-- [ ] [Super-Mamba-1.4B](https://huggingface.co/yusx-swapp/osf-mamba-1.4b-lambda-hf)
-- [ ] [Super-ViT-Base for ImageNet](https://huggingface.co/yusx-swapp/osf-vit-base-patch16-224-imagenet)
-- [ ] [Super-ViT-Base for CIFAR-100](https://huggingface.co/yusx-swapp/osf-vit-base-patch16-224-cifar100)
-- [ ] [Super-ViT-Base for CIFAR-10](https://huggingface.co/yusx-swapp/osf-vit-base-patch16-224-cifar10)
+Architecture | Dataset | Link
+-------------|---------|------
+Swin-v2-base | CIFAR-10 | [Link](https://huggingface.co/anonymous-429/osf-swin-base-patch4-window7-cifar10)
+Swin-v2-base | CIFAR-100 | [Link](https://huggingface.co/anonymous-429/osf-swinv2-base-patch4-window7-cifar100)
+CLIP-base | CIFAR-10 | [Link](https://huggingface.co/anonymous-429/osf-clip-base-patch32-cifar10)
+CLIP-base | CIFAR-100 | [Link](https://huggingface.co/anonymous-429/osf-clip-base-patch32-cifar100)
+Mamba-1.4B | Lambda | [Link](https://huggingface.co/anonymous-429/osf-mamba-1.4b-lambda-hf)
+ViT-Base | ImageNet | [Link](https://huggingface.co/anonymous-429/osf-vit-base-patch16-224-imagenet)
+ViT-Base | CIFAR-100 | [Link](https://huggingface.co/anonymous-429/osf-vit-base-patch16-224-cifar100)
+ViT-Base | CIFAR-10 | [Link](https://huggingface.co/anonymous-429/osf-vit-base-patch16-224-cifar10)
 
 ## Experimental Setup
 

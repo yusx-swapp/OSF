@@ -40,23 +40,16 @@ pip install .
 
 We provide pretrained supernet checkpoints for various architectures. These can be accessed through our HuggingFace model hub:
 
-### Vision Models
-- [Super-ViT-Base (ImageNet)](https://huggingface.co/yusx-swapp/ofm-vit-base-patch16-224-imagenet)
-- [Super-SwinV2-Base (CIFAR-10/100)](https://huggingface.co/yusx-swapp/ofm-swinv2-base-patch4-window7-cifar100/tree/main)
-- [Super-CLIP-Base (CIFAR-10/100)](https://huggingface.co/yusx-swapp/ofm-clip-base-patch32-cifar100)
-<!-- - [Super-SAM](https://huggingface.co/yusx-swapp/ofm-sam-vit-b-01ec64) -->
-
-### Language Models
-
-- [Super-Mamba-1.4B](https://huggingface.co/yusx-swapp/ofm-mamba-1.4b-lambda-hf)
-<!-- - [ ] [Super-Swinv2-base for CIFAR-10](https://huggingface.co/yusx-swapp/ofm-swin-base-patch4-window7-cifar10)
-- [ ] [Super-Swinv2-base for CIFAR-100](https://huggingface.co/yusx-swapp/ofm-swinv2-base-patch4-window7-cifar100/tree/main)
-- [ ] [Super-CLIP-base for CIFAR-10](https://huggingface.co/yusx-swapp/ofm-clip-base-patch32-cifar10)
-- [ ] [Super-CLIP-base for CIFAR-100](https://huggingface.co/yusx-swapp/ofm-clip-base-patch32-cifar100)
-- [ ] [Super-Mamba-1.4B](https://huggingface.co/yusx-swapp/ofm-mamba-1.4b-lambda-hf)
-- [ ] [Super-ViT-Base for ImageNet](https://huggingface.co/yusx-swapp/ofm-vit-base-patch16-224-imagenet)
-- [ ] [Super-ViT-Base for CIFAR-100](https://huggingface.co/yusx-swapp/ofm-vit-base-patch16-224-cifar100)
-- [ ] [Super-ViT-Base for CIFAR-10](https://huggingface.co/yusx-swapp/ofm-vit-base-patch16-224-cifar10) -->
+Architecture | Dataset | Link
+-------------|---------|------
+Swin-v2-base | CIFAR-10 | [Link](https://huggingface.co/anonymous-429/osf-swin-base-patch4-window7-cifar10)
+Swin-v2-base | CIFAR-100 | [Link](https://huggingface.co/anonymous-429/osf-swinv2-base-patch4-window7-cifar100)
+CLIP-base | CIFAR-10 | [Link](https://huggingface.co/anonymous-429/osf-clip-base-patch32-cifar10)
+CLIP-base | CIFAR-100 | [Link](https://huggingface.co/anonymous-429/osf-clip-base-patch32-cifar100)
+Mamba-1.4B | Lambda | [Link](https://huggingface.co/anonymous-429/osf-mamba-1.4b-lambda-hf)
+ViT-Base | ImageNet | [Link](https://huggingface.co/anonymous-429/osf-vit-base-patch16-224-imagenet)
+ViT-Base | CIFAR-100 | [Link](https://huggingface.co/anonymous-429/osf-vit-base-patch16-224-cifar100)
+ViT-Base | CIFAR-10 | [Link](https://huggingface.co/anonymous-429/osf-vit-base-patch16-224-cifar10)
 
 **_You don't need to download the ckpt files, you can use Huggingface Model Card to load the ckpts files directly.
 We will show you how to do that in the following section._**
@@ -71,20 +64,23 @@ Besides, we also provide a high-level API for you to quickly generate sunets for
 
 ```python
 from transformers import AutoModelForImageClassification
-from osf import OSF
+from ofm import OFM
 
-# Load model and create supernet
+# Generate downsized models
+ckpt_path = "ckpts_repo_name" # Copy the huggingface model hub repo name from above link
+
 model = AutoModelForImageClassification.from_pretrained(
-    "yusx-swapp/osf-vit-base-patch16-224-imagenet",
-    num_labels=1000
+    ckpt_path,
+    num_labels=10,
+    ignore_mismatched_sizes=True,
 )
-supernet = OSF(model)
 
-# Extract subnet with target resource constraints
-subnet, stats = supernet.extract_subnet(
-    flops_target=8.7e9,  # Target FLOPs
-    params_target=53e6   # Target parameters
-)
+supernet = OFM(model.to("cpu"))
+print("Original FM number of parameters:",supernet.total_params)
+
+#Randomly sample a downsized FM
+ds_model, params, config = supernet.random_resource_aware_model()
+print("subnetwork params",params)
 ```
 
 ## Training Your Own Supernet
